@@ -1,0 +1,20 @@
+{
+  "name": "certiflow-platform",
+  "version": "1.0.0",
+  "description": "CertiFlow - Skilling Certificate Issuance & Verification Platform for Pragati Skills Mission",
+  "scripts": {
+    "setup": "npm --prefix backend install",
+    "test": "npm --prefix backend test",
+    "start": "node backend/index.js",
+    "dev": "npm --prefix backend run dev"
+  },
+  "keywords": [
+    "certiflow",
+    "pragati",
+    "verification",
+    "certificates",
+    "hackathon"
+  ],
+  "author": "Pragati Skills Mission Team",
+  "license": "ISC"
+}
