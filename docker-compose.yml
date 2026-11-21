@@ -46,6 +46,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgrespassword@db:5432/certiflow
       REDIS_URL: redis://redis:6379
       JWT_SECRET: certiflow-production-sec-key-32chars-min
+      DEMO_PASSWORD: Certiflow@2026
     depends_on:
       db:
         condition: service_healthy

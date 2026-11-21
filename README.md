@@ -37,7 +37,7 @@ cd hackathon
 # 2. Run one-command setup (installs dependencies)
 npm run setup
 
-# 3. Run all automated verification suites (39 tests across 6 suites)
+# 3. Run all automated verification suites (49 tests across 7 suites)
 npm test
 
 # 4. Start the CertiFlow API & Verification server
@@ -50,6 +50,19 @@ npm start
 ---
 
 ## 3. Demo Persona Credentials
+
+**Login:** every user signs in with a **username + password**. For the demo, all six users share one password: `Certiflow@2026` (set with the `DEMO_PASSWORD` environment variable).
+
+- **One-click demo (default):** clicking a person in the UI signs them in with the demo password, so reviewers can try every flow instantly.
+- **Real sign-in form:** set `VITE_DEMO_MODE=false` in `frontend/frontend/.env` and the UI asks for a password instead.
+
+**Authentication decisions:**
+- Passwords are stored only as salted `scrypt` hashes (Node's built-in `crypto`, no extra dependency) and compared in constant time.
+- Wrong password and unknown user give the **same** answer, so nobody can find out which usernames exist.
+- After **5 failed attempts** for the same IP + username, login is locked for 15 minutes (HTTP 429).
+- Tokens are signed JWTs (1 day). The server **refuses to start in production without `JWT_SECRET`**.
+- Identity always comes from the verified token, never from the request body.
+- *Limitations:* demo users share one password; the lockout counter is in memory (with several API instances it should move to Redis); a real deployment would use per-user passwords or the programme's SSO, with refresh tokens.
 
 | Persona | Role | District / Scope | Key Capabilities |
 | :--- | :--- | :--- | :--- |

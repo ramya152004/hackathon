@@ -1,5 +1,10 @@
 const crypto = require('node:crypto');
 
+// A hardcoded secret is only allowed outside production. In production the
+// server refuses to start without JWT_SECRET, so tokens can't be forged.
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET must be set in production');
+}
 const JWT_SECRET = process.env.JWT_SECRET || 'certiflow-hackathon-super-secret-key-2026';
 
 function base64UrlEncode(str) {

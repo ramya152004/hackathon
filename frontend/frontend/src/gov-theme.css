@@ -1,0 +1,73 @@
+/* CertiFlow — Government portal theme (loaded after App.css; overrides colours, type and shapes) */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Devanagari:wght@500;700&family=Noto+Serif:wght@600;700&display=swap');
+
+:root {
+  --blue-950:#0b1f3a; --blue-900:#0f2a52; --blue-800:#163a6e; --blue-700:#1b4a8a; --blue-600:#1a4f94;
+  --blue-500:#2a62ab; --blue-400:#4a7fc0; --blue-300:#b9cbe3; --blue-200:#d3deee; --blue-100:#e3ebf6; --blue-50:#f2f6fb;
+  --gray-50:#f5f6f8; --gray-200:#d9dee6; --gray-300:#c2cad6;
+  --success:#1e6b34; --success-bg:#e8f3ec; --danger:#b3261e; --danger-bg:#fdecea; --warning:#8a5a00; --warning-bg:#fdf3dc;
+  --r-sm:2px; --r-md:3px; --r-lg:4px; --r-xl:4px; --r-full:3px;
+  --shadow-xs:none; --shadow-sm:0 1px 2px rgba(15,42,82,.12); --shadow-md:0 1px 3px rgba(15,42,82,.15); --shadow-lg:0 2px 6px rgba(15,42,82,.18);
+  --saffron:#ff9933; --gov-green:#138808;
+}
+body { font-family:'Noto Sans','Segoe UI',Arial,sans-serif; font-size:16px; line-height:1.55; background:var(--gray-50); color:#1b2430; }
+h1,h2,h3,.hero-title,.section-title,.card-title,.nav-brand-name,.public-verify-title { font-family:'Noto Serif',Georgia,serif; letter-spacing:0; }
+:focus-visible { outline:3px solid #f59e0b; outline-offset:2px; }
+.skip-link { position:absolute; left:-999px; top:0; background:#fff; color:var(--blue-900); padding:.6rem 1rem; z-index:100; font-weight:700; }
+.skip-link:focus { left:0; }
+
+/* Header: tricolour strip, utility bar, seal + bilingual title */
+.tricolor-stripe { height:6px; }
+.top-bar { background:#eceff3; color:#2b3645; border-bottom:1px solid var(--gray-300); }
+.top-bar-pill { background:#fff; border:1px solid var(--gray-300); color:#2b3645; border-radius:3px; }
+.navbar { background:#fff; border-bottom:4px solid var(--blue-900); box-shadow:none; }
+.nav-logo { width:48px; height:48px; border-radius:50%; background:var(--blue-900); color:#fff; border:3px double #c9a227; font-family:'Noto Serif',serif; }
+.nav-brand-label { text-transform:none; letter-spacing:.2px; color:#4b5a6e; font-size:.8rem; font-weight:600; }
+.nav-brand-name { color:var(--blue-900); font-size:1.25rem; font-weight:700; }
+.persona-switcher { background:transparent; border:0; gap:.25rem; }
+.persona-btn { border:1px solid var(--gray-300); border-radius:3px; color:var(--blue-900); background:#fff; font-size:.82rem; }
+.persona-btn:hover { background:var(--blue-50); color:var(--blue-900); }
+.persona-btn.active,.persona-btn.home-active,.persona-btn.public-active { background:var(--blue-900); color:#fff; border-color:var(--blue-900); box-shadow:none; }
+.auth-bar { background:var(--blue-100); color:var(--blue-900); border-bottom:1px solid var(--blue-300); }
+.role-banner { border-radius:3px; box-shadow:none; border:1px solid var(--blue-300); }
+
+/* Hero: light, official tone */
+.hero { background:var(--blue-50); color:var(--blue-900); padding:3.5rem 2.5rem; border-bottom:1px solid var(--blue-300); }
+.hero::before,.hero-grid-bg { display:none; }
+.hero-title { color:var(--blue-900); font-size:clamp(1.8rem,3.5vw,2.6rem); }
+.hero-subtitle,.hero-verify-desc { color:#3d4b61; }
+.hero-eyebrow { background:#fff; border:1px solid var(--blue-300); color:var(--blue-900); border-radius:3px; }
+.btn-hero-primary { background:var(--blue-900); color:#fff; border:1px solid var(--blue-900); }
+.btn-hero-secondary { background:#fff; color:var(--blue-900); border:1px solid var(--blue-900); }
+.stats-bar { background:var(--blue-900); color:#fff; }
+
+/* Content */
+.card,.step-card,.persona-card,.verify-card,.hero-verify-card { border:1px solid var(--gray-300); border-top:3px solid var(--blue-800); border-radius:3px; box-shadow:none; background:#fff; }
+.section-title { color:var(--blue-900); }
+.section-eyebrow { color:var(--saffron); font-weight:700; }
+.btn { border-radius:3px; font-weight:600; box-shadow:none; }
+.btn-primary { background:var(--blue-800); color:#fff; border:1px solid var(--blue-900); }
+.btn-primary:hover { background:var(--blue-900); }
+.btn-outline,.btn-ghost { background:#fff; color:var(--blue-900); border:1px solid var(--blue-800); }
+.btn-success { background:var(--gov-green); color:#fff; border:1px solid #0e6606; }
+.btn-danger { background:var(--danger); color:#fff; border:1px solid #8c1d18; }
+.btn-warning { background:#f2b705; color:#1b2430; border:1px solid #c79500; }
+.table-wrapper { border:1px solid var(--gray-300); border-radius:3px; overflow-x:auto; }
+.data-table th { background:var(--blue-900); color:#fff; text-transform:none; letter-spacing:0; font-size:.85rem; }
+.data-table tbody tr:nth-child(even) { background:#f5f8fc; }
+.data-table td { border-bottom:1px solid var(--gray-200); }
+.cert-result { border-radius:3px; box-shadow:none; }
+.cert-result.valid { border:2px solid var(--gov-green); }
+.cert-result.invalid { border:2px solid var(--danger); }
+.csv-editor,.verify-input,.verify-form-input,.gov-input { border:1px solid #8793a3; border-radius:3px; background:#fff; color:#1b2430; }
+.gov-input { padding:.6rem .75rem; font:inherit; min-width:min(100%,22rem); }
+.gov-label { display:block; font-weight:600; margin-bottom:.35rem; color:var(--blue-900); }
+.download-row { display:flex; flex-wrap:wrap; gap:.75rem; align-items:flex-end; }
+.download-row > div { flex:1 1 20rem; }
+.gov-section { max-width:1200px; margin:1.5rem auto 0; padding:0 1rem; }
+
+/* Footer */
+.footer { background:var(--blue-950); color:#cfd8e6; border-top:5px solid var(--saffron); }
+.footer-brand { color:#fff; font-family:'Noto Serif',serif; }
+.footer-meta { color:#aebbd0; }
+@media (max-width:760px) { .navbar { flex-direction:column; align-items:flex-start; gap:.75rem; } .persona-switcher { flex-wrap:wrap; } }

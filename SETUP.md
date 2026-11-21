@@ -19,7 +19,7 @@ cd hackathon
 # 2. Install dependencies (One-command setup)
 npm run setup
 
-# 3. Run all automated tests (39 tests across 6 suites)
+# 3. Run all automated tests (49 tests across 7 suites)
 npm test
 
 # 4. Start the backend API server
@@ -35,9 +35,12 @@ To explore the multi-persona admin dashboard:
 
 ```bash
 cd frontend/frontend
+cp .env.example .env     # demo settings (one-click login with the demo password)
 npm install
 npm run dev
 ```
+
+**Login:** username = the persona name (`anika`, `dev`, `meera`, `kabir`, `neha`, `farah`), password = `Certiflow@2026`. In the default demo mode the UI does this for you when you click a person. Set `VITE_DEMO_MODE=false` in `frontend/frontend/.env` to see a real sign-in form.
 *Open `http://localhost:5173` in your browser.*
 
 ---
@@ -64,9 +67,9 @@ docker compose ps
    ```
    Expected output:
    ```text
-   ℹ tests 39
-   ℹ suites 6
-   ℹ pass 39
+   ℹ tests 49
+   ℹ suites 7
+   ℹ pass 49
    ℹ fail 0
    ```
 

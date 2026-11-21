@@ -2,31 +2,57 @@ const express = require('express');
 const { DEMO_USERS } = require('../auth/identities');
 const { signToken } = require('../auth/jwt');
 const { authenticateToken } = require('../middleware/auth');
+const loginLimiter = require('../middleware/loginLimiter');
+const { hashPassword, verifyPassword } = require('../auth/password');
+
+// Compared against when the username doesn't exist (keeps timing the same).
+const DUMMY_HASH = hashPassword('not-a-real-password');
 
 const router = express.Router();
 
 /**
  * POST /api/auth/login
- * Log in as one of the demo identities: anika, dev, meera, kabir, neha, farah
+ * Body: { username, password }. Demo users: anika, dev, meera, kabir, neha, farah
  */
-router.post('/login', (req, res) => {
-  const { username } = req.body;
-  if (!username) {
+router.post('/login', async (req, res) => {
+  const { username, password } = req.body || {};
+  if (typeof username !== 'string' || typeof password !== 'string' || !username.trim() || !password) {
     return res.status(400).json({
-      error: 'MISSING_USERNAME',
-      message: 'Please provide username (e.g., anika, dev, meera, kabir, neha, farah)'
+      error: 'MISSING_CREDENTIALS',
+      message: 'Please provide both username and password.'
     });
   }
 
   const normalized = username.toLowerCase().trim();
-  const identity = DEMO_USERS[normalized];
+  const limiterKey = loginLimiter.keyFor(req, normalized);
 
-  if (!identity) {
-    return res.status(401).json({
-      error: 'INVALID_CREDENTIALS',
-      message: `Unknown demo identity '${username}'. Available: ${Object.keys(DEMO_USERS).join(', ')}`
+  const lock = loginLimiter.check(limiterKey);
+  if (lock.locked) {
+    res.set('Retry-After', String(lock.retryAfterSeconds));
+    return res.status(429).json({
+      error: 'TOO_MANY_ATTEMPTS',
+      message: `Too many failed attempts. Try again in ${Math.ceil(lock.retryAfterSeconds / 60)} minute(s).`
     });
   }
+
+  // hasOwnProperty: so names like "constructor" or "__proto__" are not treated as users.
+  const identity = Object.prototype.hasOwnProperty.call(DEMO_USERS, normalized)
+    ? DEMO_USERS[normalized]
+    : null;
+
+  // Always run one hash check, even for unknown users, so response time doesn't reveal who exists.
+  const passwordOk = await verifyPassword(password, identity ? identity.passwordHash : DUMMY_HASH);
+
+  if (!identity || !passwordOk) {
+    loginLimiter.recordFailure(limiterKey);
+    // Same message for "no such user" and "wrong password".
+    return res.status(401).json({
+      error: 'INVALID_CREDENTIALS',
+      message: 'Wrong username or password.'
+    });
+  }
+
+  loginLimiter.clear(limiterKey);
 
   const tokenPayload = {
     sub: identity.id,

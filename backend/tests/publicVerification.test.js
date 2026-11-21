@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { Readable } = require('node:stream');
 const { EventEmitter } = require('node:events');
 const app = require('../src/app');
+const { DEMO_PASSWORD } = require('../src/auth/identities');
 const { dataStore } = require('../src/store/dataStore');
 
 // In-Memory HTTP Dispatcher
@@ -68,7 +69,7 @@ function api(method, url, { headers = {}, body = null } = {}) {
 
 // Token helper
 async function getToken(username) {
-  const res = await api('POST', '/api/auth/login', { body: { username } });
+  const res = await api('POST', '/api/auth/login', { body: { username, password: DEMO_PASSWORD } });
   assert.equal(res.status, 200);
   return res.data.token;
 }

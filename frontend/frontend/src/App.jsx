@@ -1,7 +1,13 @@
 import { useState, useEffect } from 'react';
 import './App.css';
+import './gov-theme.css';
 
 const API = 'http://localhost:3000/api';
+
+// Demo mode (default): clicking a person logs in with the shared demo password, so reviewers
+// can try every flow instantly. Set VITE_DEMO_MODE=false to show a real sign-in form instead.
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE !== 'false';
+const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD || 'Certiflow@2026';
 
 const PERSONAS = [
   {
@@ -81,6 +87,7 @@ export default function App() {
   const [token, setToken]                   = useState(null);
   const [loginLoading, setLoginLoading]     = useState(false);
   const [loginError, setLoginError]         = useState(null);
+  const [loginPassword, setLoginPassword]   = useState('');
   const [batches, setBatches]               = useState([]);
   const [csvText, setCsvText]               = useState(VALID_CSV_SAMPLE);
   const [uploadErrors, setUploadErrors]     = useState([]);
@@ -89,6 +96,7 @@ export default function App() {
   const [verifyResult, setVerifyResult]     = useState(null);
   const [verifyLoading, setVerifyLoading]   = useState(false);
   const [backendStatus, setBackendStatus]   = useState('checking');
+  const [dlCert, setDlCert]                 = useState('PRAGATI-2026-N01-0001');
 
   // Backend health check
   useEffect(() => {
@@ -98,33 +106,52 @@ export default function App() {
       .catch(() => setBackendStatus('error'));
   }, []);
 
-  // Authenticate on persona switch
-  useEffect(() => {
-    if (currentPersona.id === 'home' || currentPersona.id === 'public') {
-      setToken(null); setLoginError(null); setLoginLoading(false);
-      return;
-    }
-    setLoginLoading(true); setLoginError(null);
-    fetch(`${API}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: currentPersona.id })
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.token) { setToken(data.token); loadBatches(data.token); }
-        else setLoginError(data.error || 'Authentication failed');
-      })
-      .catch(err => setLoginError(err.message || 'Network error'))
-      .finally(() => setLoginLoading(false));
-  }, [currentPersona]);
-
   const loadBatches = (authToken) => {
     fetch(`${API}/batches`, { headers: { Authorization: `Bearer ${authToken}` } })
       .then(res => res.json())
       .then(data => { if (data.batches) setBatches(data.batches); })
       .catch(err => console.error('Batches load error', err));
   };
+
+  // Sign in with username + password (the server checks the password and signs the token)
+  const doLogin = (username, password) => {
+    setLoginLoading(true); setLoginError(null);
+    fetch(`${API}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.token) { setToken(data.token); setLoginPassword(''); loadBatches(data.token); }
+        else setLoginError(data.message || data.error || 'Authentication failed');
+      })
+      .catch(err => setLoginError(err.message || 'Network error'))
+      .finally(() => setLoginLoading(false));
+  };
+
+  // On persona switch: drop the old session first, so one person's token is never used as another
+  useEffect(() => {
+    setToken(null); setBatches([]); setLoginPassword('');
+    if (currentPersona.id === 'home' || currentPersona.id === 'public') {
+      setLoginError(null); setLoginLoading(false);
+      return;
+    }
+    if (DEMO_MODE) doLogin(currentPersona.id, DEMO_PASSWORD);
+    else { setLoginError(null); setLoginLoading(false); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPersona]);
+
+  const submitLogin = (e) => {
+    e.preventDefault();
+    doLogin(currentPersona.id, loginPassword);
+  };
+
+  const logout = () => {
+    setToken(null); setBatches([]); setLoginPassword('');
+    switchTo('home');
+  };
+
 
   const handleUploadCsv = (batchId) => {
     setFeedback('⏳ Validating candidate roster…'); setUploadErrors([]);
@@ -181,6 +208,48 @@ export default function App() {
       .then(data => { setFeedback(`✅ ${data.message || 'Certificate revoked.'}`); loadBatches(token); });
   };
 
+  const handleDownload = (certNumber) => {
+    const id = certNumber.trim();
+    if (!id) return;
+    setFeedback('');
+    fetch(`${API}/certificates/${encodeURIComponent(id)}/download`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(async (res) => {
+        if (!res.ok) {
+          const d = await res.json().catch(() => ({}));
+          throw new Error(d.message || `Download failed (${res.status})`);
+        }
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `${id}.pdf`; a.click();
+        URL.revokeObjectURL(url);
+        setFeedback(`✅ Downloaded ${id}.pdf`);
+      })
+      .catch((err) => setFeedback(`❌ ${err.message}`));
+  };
+
+  const downloadCard = (
+    <div className="card">
+      <div className="card-header">
+        <div>
+          <h2 className="card-title">Download Certificate (PDF)</h2>
+          <p className="card-subtitle">
+            Enter a certificate number to download the issued PDF. Access is limited to authorised officers of the relevant centre, district or state office.
+          </p>
+        </div>
+      </div>
+      <div className="download-row">
+        <div>
+          <label htmlFor="cert-download" className="gov-label">Certificate number</label>
+          <input id="cert-download" className="gov-input" value={dlCert} onChange={(e) => setDlCert(e.target.value)} />
+        </div>
+        <button className="btn btn-primary" onClick={() => handleDownload(dlCert)}>Download PDF</button>
+      </div>
+    </div>
+  );
+
   const handleVerify = (e) => {
     if (e) e.preventDefault();
     if (!verifyCode.trim()) return;
@@ -199,13 +268,14 @@ export default function App() {
   /* ── RENDER ── */
   return (
     <div className="app-container">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       {/* Tricolor */}
       <div className="tricolor-stripe" />
 
       {/* Top Utility Bar */}
       <div className="top-bar">
         <div className="top-bar-left">
-          <span>🇮🇳 Pragati Skills Mission — Ministry of Skill Development &amp; Entrepreneurship</span>
+          <span>🇮🇳 Pragati Skills Mission · Hackathon demonstration (fictional programme)</span>
           <div className="top-bar-pill">
             <span className="top-bar-dot" />
             <span>Live Demo Environment</span>
@@ -216,7 +286,6 @@ export default function App() {
           <span style={{ color: backendStatus === 'connected' ? '#4ade80' : '#f87171', fontWeight: 700 }}>
             {backendStatus === 'connected' ? '● CONNECTED' : '● ERROR'}
           </span>
-          &nbsp;· 39 Tests Passing
         </span>
       </div>
 
@@ -225,7 +294,7 @@ export default function App() {
         <div className="nav-brand" onClick={() => switchTo('home')}>
           <div className="nav-logo">CF</div>
           <div className="nav-brand-text">
-            <div className="nav-brand-label">Pragati Skills Mission</div>
+            <div className="nav-brand-label"><span lang="hi">प्रगति कौशल मिशन</span> · Pragati Skills Mission</div>
             <div className="nav-brand-name">CertiFlow Platform</div>
           </div>
         </div>
@@ -268,6 +337,20 @@ export default function App() {
             )}
             {!loginLoading && loginError && (
               <span className="auth-chip err">✗ AUTH FAILED · {loginError}</span>
+            )}
+            {!DEMO_MODE && !loginLoading && !token && currentPersona.id !== 'public' && (
+              <form className="login-form" onSubmit={submitLogin}>
+                <input className="login-input" value={currentPersona.id} readOnly aria-label="Username" />
+                <input
+                  className="login-input" type="password" placeholder="Password"
+                  value={loginPassword} onChange={e => setLoginPassword(e.target.value)}
+                  autoComplete="current-password" aria-label="Password" required
+                />
+                <button className="login-btn" type="submit">Sign in</button>
+              </form>
+            )}
+            {token && (
+              <button className="login-btn" type="button" onClick={logout}>Sign out</button>
             )}
             {!loginLoading && currentPersona.id === 'public' && (
               <span className="auth-chip ok">🌐 PUBLIC · NO LOGIN REQUIRED</span>
@@ -488,7 +571,7 @@ export default function App() {
           VIEW: ALL AUTHENTICATED PERSONAS
       ═══════════════════════════════════════════ */}
       {currentPersona.id !== 'home' && (
-        <main className="workspace">
+        <main className="workspace" id="main-content">
           {/* Feedback Banner */}
           <FeedbackBanner msg={feedback} />
 
@@ -1004,6 +1087,9 @@ export default function App() {
               </div>
             </div>
           )}
+          {['anika', 'dev', 'meera', 'farah'].includes(currentPersona.id) && (
+            <div className="gov-section">{downloadCard}</div>
+          )}
         </main>
       )}
 
@@ -1013,14 +1099,14 @@ export default function App() {
           <div>
             <div className="footer-brand">🛡️ Pragati Skills Mission — CertiFlow Platform</div>
             <div className="footer-meta">
-              State-Level Digital Credential & Instant Verification Engine · Government of India Initiative
+              State-Level Digital Credential & Instant Verification Engine · Demonstration project, not an official Government website
             </div>
           </div>
           <div className="footer-status">
             <span className={`footer-status-dot ${backendStatus !== 'connected' ? '' : ''}`}
               style={{ background: backendStatus === 'connected' ? '#22c55e' : '#ef4444', boxShadow: `0 0 6px ${backendStatus === 'connected' ? '#22c55e' : '#ef4444'}` }}
             />
-            <span>API {backendStatus.toUpperCase()} · Port 3000 · 39/39 Tests Passing</span>
+            <span>API {backendStatus.toUpperCase()}</span>
           </div>
         </div>
       </footer>

@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { Readable } = require('node:stream');
 const { EventEmitter } = require('node:events');
 const app = require('../src/app');
+const { DEMO_PASSWORD } = require('../src/auth/identities');
 const { dataStore } = require('../src/store/dataStore');
 
 // In-Memory HTTP Dispatcher (Runs completely in-process without socket dependencies)
@@ -64,7 +65,7 @@ function api(method, url, { headers = {}, body = null } = {}) {
 
 // Helper to authenticate as demo persona
 async function loginAs(username) {
-  const res = await api('POST', '/api/auth/login', { body: { username } });
+  const res = await api('POST', '/api/auth/login', { body: { username, password: DEMO_PASSWORD } });
   assert.equal(res.status, 200, `Login for ${username} failed`);
   return res.data.token;
 }
@@ -96,20 +97,20 @@ describe('CertiFlow Authentication & Server-Side RBAC Security Suite', () => {
 
   test('2. Demo personas authenticate and receive correctly scoped tokens', async () => {
     // Anika (Training Centre)
-    const resAnika = await api('POST', '/api/auth/login', { body: { username: 'anika' } });
+    const resAnika = await api('POST', '/api/auth/login', { body: { username: 'anika', password: DEMO_PASSWORD } });
     assert.equal(resAnika.status, 200);
     assert.equal(resAnika.data.user.role, 'TRAINING_CENTRE');
     assert.equal(resAnika.data.user.centreId, 'centre-apex-01');
     assert.equal(resAnika.data.user.districtId, 'district-north');
 
     // Kabir (South District Officer)
-    const resKabir = await api('POST', '/api/auth/login', { body: { username: 'kabir' } });
+    const resKabir = await api('POST', '/api/auth/login', { body: { username: 'kabir', password: DEMO_PASSWORD } });
     assert.equal(resKabir.status, 200);
     assert.equal(resKabir.data.user.role, 'DISTRICT_OFFICER');
     assert.equal(resKabir.data.user.districtId, 'district-south');
 
     // Farah (State Office)
-    const resFarah = await api('POST', '/api/auth/login', { body: { username: 'farah' } });
+    const resFarah = await api('POST', '/api/auth/login', { body: { username: 'farah', password: DEMO_PASSWORD } });
     assert.equal(resFarah.status, 200);
     assert.equal(resFarah.data.user.role, 'STATE_OFFICE');
   });
