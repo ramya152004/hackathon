@@ -54,14 +54,15 @@ const PERSONAS = [
   },
 ];
 
-const VALID_CSV_SAMPLE = `fullName,nationalId,phone,courseName,completionDate,grade,score
-Amit Kumar,XXXX-XXXX-1122,+91 98765 11111,Solar PV Installer,2026-02-15,A+,92
-Sunita Patel,XXXX-XXXX-3344,+91 98765 22222,Solar PV Installer,2026-02-15,A,88
-Vikram Rao,XXXX-XXXX-5566,+91 98765 33333,Solar PV Installer,2026-02-15,B+,79`;
+const VALID_CSV_SAMPLE = `full_name,phone,email,national_id,dob,marks_percentage,grade
+Amit Kumar,9876500001,amit@example.com,TESTID-1001,2004-05-14,92,A+
+Sunita Patel,9876500002,sunita@example.com,TESTID-1002,2003-11-20,88,A
+Vikram Rao,9876500003,vikram@example.com,TESTID-1003,2002-08-09,79,B+`;
 
-const BAD_CSV_SAMPLE = `fullName,nationalId,phone,courseName,completionDate,grade,score
-Amit Kumar,XXXX-XXXX-1122,12345,Solar PV Installer,2026-02-15,A+,92
-Duplicate Candidate,XXXX-XXXX-1122,+91 98765 11111,Solar PV Installer,2026-02-15,A,88`;
+const BAD_CSV_SAMPLE = `full_name,phone,email,national_id,dob,marks_percentage,grade
+Amit Kumar,9876500001,amit@example.com,TESTID-1001,2004-05-14,92,A+
+Duplicate Candidate,9876500001,duplicate@example.com,TESTID-1001,2003-10-25,88,A
+Malformed Candidate,12345,malformed@example.com,TESTID-1003,2020-12-01,105,B`;
 
 function getBadgeClass(status) {
   if (!status) return 'badge-draft';
@@ -153,16 +154,16 @@ export default function App() {
   };
 
 
-  const handleUploadCsv = (batchId) => {
+  const handleUploadCsv = () => {
     setFeedback('⏳ Validating candidate roster…'); setUploadErrors([]);
-    fetch(`${API}/batches/${batchId}/upload`, {
+    fetch(`${API}/batches/upload-csv`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'text/csv' },
-      body: csvText
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ courseName: 'Solar PV Installer', csvContent: csvText })
     })
       .then(res => res.json().then(data => ({ status: res.status, data })))
       .then(({ status, data }) => {
-        if (status === 200) { setFeedback(`✅ ${data.message}`); loadBatches(token); }
+        if (status === 201) { setFeedback(`✅ ${data.message}`); loadBatches(token); }
         else {
           setFeedback(`❌ Validation Failed: ${data.message}`);
           if (data.errors) setUploadErrors(data.errors);
@@ -629,10 +630,10 @@ export default function App() {
                 <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.9rem' }}>
                   <button
                     className="btn btn-primary"
-                    onClick={() => handleUploadCsv('batch-north-01')}
-                    aria-label="Upload CSV to batch"
+                    onClick={handleUploadCsv}
+                    aria-label="Upload CSV to create batch"
                   >
-                    📤 Upload to Batch (batch-north-01)
+                    📤 Upload CSV & Create Batch
                   </button>
                 </div>
 

@@ -29,13 +29,16 @@ h1,h2,h3,.hero-title,.section-title,.card-title,.nav-brand-name,.public-verify-t
 .persona-btn:hover { background:var(--blue-50); color:var(--blue-900); }
 .persona-btn.active,.persona-btn.home-active,.persona-btn.public-active { background:var(--blue-900); color:#fff; border-color:var(--blue-900); box-shadow:none; }
 .auth-bar { background:var(--blue-100); color:var(--blue-900); border-bottom:1px solid var(--blue-300); }
-.role-banner { border-radius:3px; box-shadow:none; border:1px solid var(--blue-300); }
+.role-banner { border-radius:3px; box-shadow:none; border:1px solid var(--blue-300); flex-wrap:wrap; }
+.role-banner .btn-ghost { flex:0 0 auto; min-height:44px; white-space:nowrap; }
 
 /* Hero: light, official tone */
 .hero { background:var(--blue-50); color:var(--blue-900); padding:3.5rem 2.5rem; border-bottom:1px solid var(--blue-300); }
 .hero::before,.hero-grid-bg { display:none; }
 .hero-title { color:var(--blue-900); font-size:clamp(1.8rem,3.5vw,2.6rem); }
+.hero-title .accent { background:none; color:var(--blue-900); -webkit-text-fill-color:var(--blue-900); }
 .hero-subtitle,.hero-verify-desc { color:#3d4b61; }
+.hero-subtitle strong { color:var(--blue-900); }
 .hero-eyebrow { background:#fff; border:1px solid var(--blue-300); color:var(--blue-900); border-radius:3px; }
 .btn-hero-primary { background:var(--blue-900); color:#fff; border:1px solid var(--blue-900); }
 .btn-hero-secondary { background:#fff; color:var(--blue-900); border:1px solid var(--blue-900); }
@@ -70,4 +73,9 @@ h1,h2,h3,.hero-title,.section-title,.card-title,.nav-brand-name,.public-verify-t
 .footer { background:var(--blue-950); color:#cfd8e6; border-top:5px solid var(--saffron); }
 .footer-brand { color:#fff; font-family:'Noto Serif',serif; }
 .footer-meta { color:#aebbd0; }
-@media (max-width:760px) { .navbar { flex-direction:column; align-items:flex-start; gap:.75rem; } .persona-switcher { flex-wrap:wrap; } }
+@media (max-width:1100px) {
+  .navbar { height:auto; min-height:68px; flex-direction:column; align-items:flex-start; gap:.75rem; padding:.75rem 1rem; }
+  .persona-switcher { width:100%; flex-wrap:wrap; overflow:visible; justify-content:flex-start; }
+  .role-banner { flex-direction:column; align-items:stretch; }
+  .role-banner .btn-ghost { width:100%; justify-content:center; }
+}
