@@ -20,6 +20,12 @@ app.use('/api/certificates', certificateRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/jobs', jobRoutes);
 
+// Public verification portal shortcut
+app.get('/verify', (req, res) => {
+  const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+  res.redirect('/api/public/portal' + query);
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.status(200).json({

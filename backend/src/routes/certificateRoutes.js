@@ -181,6 +181,15 @@ router.post('/:id/revoke', authenticateToken, requireRole(ROLES.STATE_OFFICE), (
   cert.revokedById = req.user.sub;
   cert.revocationReason = reason.trim();
 
+  // Instant real-time event broadcast to connected SSE streams
+  const { eventBus } = require('../events/eventBus');
+  eventBus.broadcast('CERTIFICATE_REVOKED', {
+    certificateNumber: cert.certificateNumber,
+    status: 'CANCELLED',
+    revokedAt: cert.revokedAt,
+    reason: cert.revocationReason
+  });
+
   dataStore.logAudit(req.user, 'REVOKE_CERTIFICATE', 'CERTIFICATE', cert.id, {
     reason: reason.trim(),
     certificateNumber: cert.certificateNumber
