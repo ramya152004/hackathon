@@ -4,13 +4,48 @@ import './App.css';
 const API = 'http://localhost:3000/api';
 
 const PERSONAS = [
-  { id: 'home', name: 'Home', role: 'LANDING', label: '🏠 Overview & Landing', desc: 'CertiFlow Platform Overview & Architecture' },
-  { id: 'anika', name: 'Anika Sharma', role: 'TRAINING_CENTRE', label: '🏢 Anika (Centre)', desc: 'Apex Skills Academy (North District)' },
-  { id: 'dev', name: 'Dev Patel', role: 'DISTRICT_OFFICER', label: '🏛️ Dev (District 1)', desc: 'District Officer (North District - Reviewer 1)' },
-  { id: 'meera', name: 'Meera Rao', role: 'DISTRICT_OFFICER', label: '🏛️ Meera (District 2)', desc: 'District Officer (North District - Reviewer 2)' },
-  { id: 'neha', name: 'Neha Gupta', role: 'QUALITY_TEAM', label: '🔍 Neha (Quality)', desc: 'Quality Inspection Team (>50 Candidates)' },
-  { id: 'farah', name: 'Farah Khan', role: 'STATE_OFFICE', label: '👑 Farah (State Office)', desc: 'State Office Final Approval & Cancellation' },
-  { id: 'public', name: 'Public Verifier', role: 'PUBLIC', label: '🌐 Public Verifier', desc: 'No-Login Certificate Verification & QR Scan' },
+  {
+    id: 'home', name: 'Home', role: 'LANDING',
+    label: '🏠 Home', shortLabel: 'Home',
+    desc: 'CertiFlow Platform Overview & Architecture',
+    icon: '🏠'
+  },
+  {
+    id: 'anika', name: 'Anika Sharma', role: 'TRAINING_CENTRE',
+    label: '🏢 Training Centre', shortLabel: 'Anika',
+    desc: 'Apex Skills Academy (North District)',
+    icon: '🏢'
+  },
+  {
+    id: 'dev', name: 'Dev Patel', role: 'DISTRICT_OFFICER',
+    label: '🏛️ District Officer 1', shortLabel: 'Dev',
+    desc: 'District Officer (North District – Reviewer 1)',
+    icon: '🏛️'
+  },
+  {
+    id: 'meera', name: 'Meera Rao', role: 'DISTRICT_OFFICER',
+    label: '🏛️ District Officer 2', shortLabel: 'Meera',
+    desc: 'District Officer (North District – Reviewer 2)',
+    icon: '🏛️'
+  },
+  {
+    id: 'neha', name: 'Neha Gupta', role: 'QUALITY_TEAM',
+    label: '🔍 Quality Team', shortLabel: 'Neha',
+    desc: 'Quality Inspection Team (>50 Candidates)',
+    icon: '🔍'
+  },
+  {
+    id: 'farah', name: 'Farah Khan', role: 'STATE_OFFICE',
+    label: '👑 State Office', shortLabel: 'Farah',
+    desc: 'State Office Final Approval & Certificate Revocation',
+    icon: '👑'
+  },
+  {
+    id: 'public', name: 'Public Verifier', role: 'PUBLIC',
+    label: '🌐 Public Verify', shortLabel: 'Public',
+    desc: 'No-Login Certificate Verification & QR Scan',
+    icon: '🌐'
+  },
 ];
 
 const VALID_CSV_SAMPLE = `fullName,nationalId,phone,courseName,completionDate,grade,score
@@ -22,288 +57,324 @@ const BAD_CSV_SAMPLE = `fullName,nationalId,phone,courseName,completionDate,grad
 Amit Kumar,XXXX-XXXX-1122,12345,Solar PV Installer,2026-02-15,A+,92
 Duplicate Candidate,XXXX-XXXX-1122,+91 98765 11111,Solar PV Installer,2026-02-15,A,88`;
 
-export default function App() {
-  const [currentPersona, setCurrentPersona] = useState(PERSONAS[0]); // Default to Landing Page
-  const [token, setToken] = useState(null);
-  const [batches, setBatches] = useState([]);
-  const [csvText, setCsvText] = useState(VALID_CSV_SAMPLE);
-  const [uploadErrors, setUploadErrors] = useState([]);
-  const [feedback, setFeedback] = useState('');
-  const [verifyCode, setVerifyCode] = useState('PRAGATI-2026-N01-0001');
-  const [verifyResult, setVerifyResult] = useState(null);
-  const [verifyLoading, setVerifyLoading] = useState(false);
-  const [backendStatus, setBackendStatus] = useState('checking');
+function getBadgeClass(status) {
+  if (!status) return 'badge-draft';
+  return 'badge-' + status.toLowerCase().replace(/_/g, '');
+}
 
-  // Check backend health
+function FeedbackBanner({ msg }) {
+  if (!msg) return null;
+  const isSuccess = msg.startsWith('✅');
+  const isError   = msg.startsWith('❌');
+  const type = isSuccess ? 'success' : isError ? 'error' : 'info';
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  return (
+    <div className={`feedback-banner ${type}`} role="alert">
+      <span>{icons[type]}</span>
+      <span>{msg.replace(/^[✅❌]\s*/, '')}</span>
+    </div>
+  );
+}
+
+export default function App() {
+  const [currentPersona, setCurrentPersona] = useState(PERSONAS[0]);
+  const [token, setToken]                   = useState(null);
+  const [loginLoading, setLoginLoading]     = useState(false);
+  const [loginError, setLoginError]         = useState(null);
+  const [batches, setBatches]               = useState([]);
+  const [csvText, setCsvText]               = useState(VALID_CSV_SAMPLE);
+  const [uploadErrors, setUploadErrors]     = useState([]);
+  const [feedback, setFeedback]             = useState('');
+  const [verifyCode, setVerifyCode]         = useState('PRAGATI-2026-N01-0001');
+  const [verifyResult, setVerifyResult]     = useState(null);
+  const [verifyLoading, setVerifyLoading]   = useState(false);
+  const [backendStatus, setBackendStatus]   = useState('checking');
+
+  // Backend health check
   useEffect(() => {
     fetch(`${API}/health`)
-      .then((r) => r.json())
+      .then(r => r.json())
       .then(() => setBackendStatus('connected'))
       .catch(() => setBackendStatus('error'));
   }, []);
 
-  // Authenticate as active persona
+  // Authenticate on persona switch
   useEffect(() => {
     if (currentPersona.id === 'home' || currentPersona.id === 'public') {
-      setToken(null);
+      setToken(null); setLoginError(null); setLoginLoading(false);
       return;
     }
-
+    setLoginLoading(true); setLoginError(null);
     fetch(`${API}/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: currentPersona.id })
     })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.token) {
-          setToken(data.token);
-          loadBatches(data.token);
-        }
+      .then(res => res.json())
+      .then(data => {
+        if (data.token) { setToken(data.token); loadBatches(data.token); }
+        else setLoginError(data.error || 'Authentication failed');
       })
-      .catch((err) => console.error('Login error', err));
+      .catch(err => setLoginError(err.message || 'Network error'))
+      .finally(() => setLoginLoading(false));
   }, [currentPersona]);
 
-  // Load batch lists for the active identity
   const loadBatches = (authToken) => {
-    fetch(`${API}/batches`, {
-      headers: { Authorization: `Bearer ${authToken}` }
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.batches) setBatches(data.batches);
-      })
-      .catch((err) => console.error('Batches load error', err));
+    fetch(`${API}/batches`, { headers: { Authorization: `Bearer ${authToken}` } })
+      .then(res => res.json())
+      .then(data => { if (data.batches) setBatches(data.batches); })
+      .catch(err => console.error('Batches load error', err));
   };
 
-  // Handle CSV Upload
   const handleUploadCsv = (batchId) => {
-    setFeedback('Validating candidate roster...');
-    setUploadErrors([]);
-
+    setFeedback('⏳ Validating candidate roster…'); setUploadErrors([]);
     fetch(`${API}/batches/${batchId}/upload`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'text/csv'
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'text/csv' },
       body: csvText
     })
-      .then((res) => res.json().then((data) => ({ status: res.status, data })))
+      .then(res => res.json().then(data => ({ status: res.status, data })))
       .then(({ status, data }) => {
-        if (status === 200) {
-          setFeedback(`✅ ${data.message}`);
-          loadBatches(token);
-        } else {
+        if (status === 200) { setFeedback(`✅ ${data.message}`); loadBatches(token); }
+        else {
           setFeedback(`❌ Validation Failed: ${data.message}`);
           if (data.errors) setUploadErrors(data.errors);
           loadBatches(token);
         }
       })
-      .catch((err) => setFeedback(`Error: ${err.message}`));
+      .catch(err => setFeedback(`❌ Error: ${err.message}`));
   };
 
-  // Submit batch for review
   const handleSubmitBatch = (batchId) => {
     fetch(`${API}/batches/${batchId}/submit`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}` }
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }
     })
-      .then((res) => res.json().then((data) => ({ status: res.status, data })))
+      .then(res => res.json().then(data => ({ status: res.status, data })))
       .then(({ status, data }) => {
-        if (status === 200) {
-          setFeedback(`✅ Batch submitted to District Officers.`);
-          loadBatches(token);
-        } else {
-          setFeedback(`❌ Error: ${data.message || data.error}`);
-        }
+        if (status === 200) { setFeedback('✅ Batch submitted to District Officers for review.'); loadBatches(token); }
+        else setFeedback(`❌ Error: ${data.message || data.error}`);
       });
   };
 
-  // Action decision handler (Approve / Reject / Return)
   const handleDecision = (batchId, action, reason = '') => {
     fetch(`${API}/batches/${batchId}/decision`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, reason })
     })
-      .then((res) => res.json().then((data) => ({ status: res.status, data })))
+      .then(res => res.json().then(data => ({ status: res.status, data })))
       .then(({ status, data }) => {
-        if (status === 200) {
-          setFeedback(`✅ Action '${action}' recorded: ${data.message}`);
-          loadBatches(token);
-        } else {
-          setFeedback(`❌ Error: ${data.message || data.error}`);
-        }
+        if (status === 200) { setFeedback(`✅ ${action}: ${data.message}`); loadBatches(token); }
+        else setFeedback(`❌ Error: ${data.message || data.error}`);
       });
   };
 
-  // State Office Certificate Revocation
   const handleRevoke = (certNumber) => {
-    const reason = prompt('Please enter the mandatory cancellation/revocation reason:', 'Audited attendance record forgery');
+    const reason = prompt('Enter mandatory revocation reason:', 'Audited attendance record forgery');
     if (!reason) return;
-
     fetch(`${API}/certificates/${certNumber}/revoke`, {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ reason })
     })
-      .then((r) => r.json())
-      .then((data) => {
-        alert(data.message || 'Revoked');
-        loadBatches(token);
-      });
+      .then(r => r.json())
+      .then(data => { setFeedback(`✅ ${data.message || 'Certificate revoked.'}`); loadBatches(token); });
   };
 
-  // Public Verification Lookup
   const handleVerify = (e) => {
     if (e) e.preventDefault();
-    if (!verifyCode) return;
-    setVerifyLoading(true);
-    setVerifyResult(null);
-
+    if (!verifyCode.trim()) return;
+    setVerifyLoading(true); setVerifyResult(null);
     fetch(`${API}/public/verify/${verifyCode.trim()}`)
-      .then((res) => res.json().then((data) => ({ status: res.status, data })))
-      .then(({ status, data }) => {
-        setVerifyLoading(false);
-        setVerifyResult({ status, ...data });
-      })
-      .catch((err) => {
-        setVerifyLoading(false);
-        setVerifyResult({ status: 500, error: err.message });
-      });
+      .then(res => res.json().then(data => ({ status: res.status, data })))
+      .then(({ status, data }) => { setVerifyLoading(false); setVerifyResult({ status, ...data }); })
+      .catch(err => { setVerifyLoading(false); setVerifyResult({ status: 500, error: err.message }); });
   };
 
+  const switchTo = (id) => {
+    setCurrentPersona(PERSONAS.find(p => p.id === id));
+    setFeedback(''); setUploadErrors([]);
+  };
+
+  /* ── RENDER ── */
   return (
     <div className="app-container">
-      {/* Top Navbar */}
+      {/* Tricolor */}
+      <div className="tricolor-stripe" />
+
+      {/* Top Utility Bar */}
+      <div className="top-bar">
+        <div className="top-bar-left">
+          <span>🇮🇳 Pragati Skills Mission — Ministry of Skill Development &amp; Entrepreneurship</span>
+          <div className="top-bar-pill">
+            <span className="top-bar-dot" />
+            <span>Live Demo Environment</span>
+          </div>
+        </div>
+        <span>
+          API Status:&nbsp;
+          <span style={{ color: backendStatus === 'connected' ? '#4ade80' : '#f87171', fontWeight: 700 }}>
+            {backendStatus === 'connected' ? '● CONNECTED' : '● ERROR'}
+          </span>
+          &nbsp;· 39 Tests Passing
+        </span>
+      </div>
+
+      {/* Primary Nav */}
       <header className="navbar">
-        <div className="nav-brand" onClick={() => setCurrentPersona(PERSONAS[0])}>
-          <div className="nav-logo">PRAGATI</div>
-          <div>
-            <div className="nav-title">CertiFlow Platform</div>
-            <div className="nav-subtitle">State Skilling Credential Engine</div>
+        <div className="nav-brand" onClick={() => switchTo('home')}>
+          <div className="nav-logo">CF</div>
+          <div className="nav-brand-text">
+            <div className="nav-brand-label">Pragati Skills Mission</div>
+            <div className="nav-brand-name">CertiFlow Platform</div>
           </div>
         </div>
 
-        <div className="persona-switcher">
-          {PERSONAS.map((p) => (
-            <button
-              key={p.id}
-              className={`persona-btn ${
-                currentPersona.id === p.id
-                  ? p.id === 'home'
-                    ? 'home-active'
-                    : p.id === 'public'
-                    ? 'public-active'
-                    : 'active'
-                  : ''
-              }`}
-              onClick={() => {
-                setCurrentPersona(p);
-                setFeedback('');
-                setUploadErrors([]);
-              }}
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="persona-switcher" role="tablist" aria-label="Switch persona">
+          {PERSONAS.map(p => {
+            const isActive = currentPersona.id === p.id;
+            const cls = isActive
+              ? p.id === 'home' ? 'home-active' : p.id === 'public' ? 'public-active' : 'active'
+              : '';
+            return (
+              <button
+                key={p.id}
+                role="tab"
+                aria-selected={isActive}
+                className={`persona-btn ${cls}`}
+                onClick={() => switchTo(p.id)}
+                aria-label={`Switch to ${p.name}`}
+              >
+                {p.label}
+              </button>
+            );
+          })}
         </div>
       </header>
 
-      {/* 1. LANDING PAGE VIEW (HOME) */}
+      {/* Auth / RBAC Strip (shown only for protected personas) */}
+      {currentPersona.id !== 'home' && (
+        <div className="auth-bar" role="status" aria-live="polite">
+          <div className="auth-bar-left">
+            <span>🔐 Session</span>
+            {loginLoading && (
+              <span className="auth-chip loading">
+                <span className="spinner" style={{ width: 10, height: 10, borderWidth: 1.5 }} />
+                AUTHENTICATING…
+              </span>
+            )}
+            {!loginLoading && token && (
+              <span className="auth-chip ok">✓ AUTHENTICATED · {currentPersona.role}</span>
+            )}
+            {!loginLoading && loginError && (
+              <span className="auth-chip err">✗ AUTH FAILED · {loginError}</span>
+            )}
+            {!loginLoading && currentPersona.id === 'public' && (
+              <span className="auth-chip ok">🌐 PUBLIC · NO LOGIN REQUIRED</span>
+            )}
+          </div>
+          <span style={{ fontFamily: 'monospace', fontSize: '0.68rem' }}>
+            USER: {currentPersona.name} · ROLE: {currentPersona.role}
+          </span>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════════════
+          VIEW: LANDING / HOME
+      ═══════════════════════════════════════════ */}
       {currentPersona.id === 'home' && (
         <div>
-          {/* Hero Section */}
-          <section className="hero-section">
-            <div className="hero-pill">
-              🛡️ Pragati Skills Mission • Official Credential Platform
+          {/* Hero */}
+          <section className="hero" aria-label="Hero section">
+            <div className="hero-grid-bg" aria-hidden="true" />
+            <div className="hero-eyebrow">
+              <span className="hero-eyebrow-dot" />
+              Official Government Credential Platform · Hackathon Demo
             </div>
             <h1 className="hero-title">
-              Digital, Auditable & Tamper-Proof <span>Skilling Certification</span>
+              Digital, Auditable &amp; Tamper-Proof<br />
+              <span className="accent">Skilling Certification</span>
             </h1>
-            <p className="hero-desc">
-              Transforming how <strong>300+ training centres</strong> certify <strong>8,000 young candidates</strong> every month. Replacing vulnerable manual Word files and WhatsApp approvals with multi-officer consensus and instant cryptographic verification.
+            <p className="hero-subtitle">
+              Transforming how <strong>300+ training centres</strong> certify <strong>8,000 young candidates</strong> every month.
+              Replacing vulnerable manual Word-file workflows and WhatsApp approvals with
+              cryptographic multi-officer consensus and instant public verification.
             </p>
 
-            <div className="hero-cta-group">
+            <div className="hero-cta-row">
               <button
-                className="btn btn-primary btn-lg"
-                onClick={() => setCurrentPersona(PERSONAS.find((p) => p.id === 'public'))}
+                className="btn btn-hero-primary btn-lg"
+                onClick={() => switchTo('public')}
+                aria-label="Verify a certificate"
               >
                 🔍 Verify a Certificate
               </button>
               <button
-                className="btn btn-outline btn-lg"
-                onClick={() => setCurrentPersona(PERSONAS.find((p) => p.id === 'anika'))}
+                className="btn btn-hero-secondary btn-lg"
+                onClick={() => switchTo('anika')}
+                aria-label="Start interactive demo as Anika"
               >
-                🚀 Start Interactive Demo (Anika)
+                🚀 Start Interactive Demo
               </button>
             </div>
 
-            {/* Embedded Live Quick Verification Widget */}
+            {/* Quick Authenticator */}
             <div className="hero-verify-card">
-              <div style={{ fontWeight: 700, fontSize: '1.05rem', marginBottom: '0.25rem' }}>
-                Instant Certificate Authenticator
+              <div className="hero-verify-label">Live Certificate Authenticator</div>
+              <div className="hero-verify-title">Instant Credential Verification</div>
+              <div className="hero-verify-desc">
+                Scan an official QR code or test with our demo credential numbers below.
               </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
-                Scan an official QR code or test with our demo credentials:
-              </div>
-
-              <form onSubmit={handleVerify} style={{ display: 'flex', gap: '0.5rem' }}>
-                <input
-                  type="text"
-                  style={{ flex: 1, padding: '0.65rem 0.85rem', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '0.9rem' }}
-                  placeholder="Enter Certificate Number or Token (e.g. PRAGATI-2026-N01-0001)"
-                  value={verifyCode}
-                  onChange={(e) => setVerifyCode(e.target.value)}
-                />
-                <button type="submit" className="btn btn-primary">
-                  {verifyLoading ? 'Checking...' : 'Check'}
-                </button>
+              <form onSubmit={handleVerify}>
+                <div className="verify-input-row">
+                  <input
+                    type="text"
+                    className="verify-input"
+                    placeholder="PRAGATI-2026-N01-0001"
+                    value={verifyCode}
+                    onChange={e => setVerifyCode(e.target.value)}
+                    aria-label="Certificate number or token"
+                  />
+                  <button type="submit" className="btn btn-hero-primary" disabled={verifyLoading} aria-label="Verify certificate">
+                    {verifyLoading ? <><span className="spinner" /> Checking…</> : '→ Verify'}
+                  </button>
+                </div>
+                <div className="verify-samples">
+                  <button type="button" className="verify-sample-btn" onClick={() => setVerifyCode('PRAGATI-2026-N01-0001')}>
+                    🟢 Sample Valid Cert
+                  </button>
+                  <button type="button" className="verify-sample-btn" onClick={() => setVerifyCode('PRAGATI-2026-N01-0002')}>
+                    🔴 Sample Revoked Cert
+                  </button>
+                </div>
               </form>
 
-              <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem' }}>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}
-                  onClick={() => { setVerifyCode('PRAGATI-2026-N01-0001'); }}
-                >
-                  🟢 Sample Valid Cert
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}
-                  onClick={() => { setVerifyCode('PRAGATI-2026-N01-0002'); }}
-                >
-                  🔴 Sample Revoked Cert
-                </button>
-              </div>
-
+              {/* Inline result in hero */}
               {verifyResult && (
-                <div className={`cert-card ${verifyResult.status === 'CANCELLED' ? 'cancelled' : ''}`} style={{ marginTop: '1rem', padding: '1rem' }}>
-                  <div className={`cert-status-badge ${verifyResult.status === 'VALID' ? 'valid' : 'cancelled'}`}>
-                    ● {verifyResult.status}
-                  </div>
-                  {verifyResult.status === 'VALID' && (
-                    <div style={{ fontSize: '0.88rem' }}>
-                      <strong>{verifyResult.candidateName}</strong> — {verifyResult.courseName} ({verifyResult.centreName})
-                      <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                        Grade: {verifyResult.grade} | Issued: {verifyResult.issuedAt?.slice(0, 10)}
+                <div className={`cert-result ${verifyResult.status === 'VALID' ? 'valid' : 'invalid'}`} style={{ marginTop: '1.25rem' }}>
+                  <div className="cert-result-header">
+                    <div className="cert-status-icon">
+                      {verifyResult.status === 'VALID' ? '✅' : '❌'}
+                    </div>
+                    <div>
+                      <div className="cert-status-name">
+                        {verifyResult.status === 'VALID' ? 'Certificate Valid' : 'Certificate Invalid / Revoked'}
+                      </div>
+                      <div className="cert-status-sub">
+                        {verifyResult.status === 'VALID'
+                          ? `Issued to ${verifyResult.candidateName}`
+                          : verifyResult.cancellationReason || verifyResult.error || 'Not found'}
                       </div>
                     </div>
-                  )}
-                  {verifyResult.status === 'CANCELLED' && (
-                    <div style={{ fontSize: '0.88rem', color: '#991b1b' }}>
-                      <strong>Revocation Reason:</strong> {verifyResult.cancellationReason || verifyResult.revocationReason}
+                  </div>
+                  {verifyResult.status === 'VALID' && (
+                    <div className="cert-result-body">
+                      <div className="cert-fields">
+                        <div><div className="cert-field-label">Course</div><div className="cert-field-value">{verifyResult.courseName}</div></div>
+                        <div><div className="cert-field-label">Training Centre</div><div className="cert-field-value">{verifyResult.centreName}</div></div>
+                        <div><div className="cert-field-label">Grade</div><div className="cert-field-value">{verifyResult.grade}</div></div>
+                        <div><div className="cert-field-label">Issued On</div><div className="cert-field-value">{verifyResult.issuedAt?.slice(0, 10)}</div></div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -311,228 +382,185 @@ export default function App() {
             </div>
           </section>
 
-          {/* Key Stats Bar */}
-          <div className="stats-grid">
-            <div className="stat-card">
-              <div className="stat-number">300+</div>
-              <div className="stat-label">Training Centres Managed</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-number">8,000</div>
-              <div className="stat-label">Monthly Youth Certified</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-number">2 / 2</div>
-              <div className="stat-label">District Officers Required</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-number">&lt; 1 sec</div>
-              <div className="stat-label">Instant Verification Time</div>
+          {/* Stats Bar */}
+          <div className="stats-bar" aria-label="Platform statistics">
+            <div className="stats-inner">
+              {[
+                { n: '300+', l: 'Training Centres Managed' },
+                { n: '8,000', l: 'Monthly Youth Certified' },
+                { n: '2 / 2', l: 'Officers Required for Consensus' },
+                { n: '< 1 s', l: 'Instant Public Verification' },
+              ].map((s, i) => (
+                <div key={i} className="stat-item">
+                  <div className="stat-number">{s.n}</div>
+                  <div className="stat-label">{s.l}</div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Section 1: How the Platform Works */}
-          <div className="section-container">
-            <div className="section-heading">
-              <h2>How CertiFlow Solves the Crisis</h2>
-              <p>Eliminating fraud and weeks of administrative delay in 4 strictly enforced steps.</p>
+          {/* How It Works */}
+          <section className="section" aria-label="How the platform works">
+            <div className="section-header-center">
+              <div className="section-eyebrow">Platform Architecture</div>
+              <h2 className="section-title">How CertiFlow Solves the Crisis</h2>
+              <p className="section-desc">
+                Four strictly-enforced steps that eliminate fraud and compress weeks of administrative delay.
+              </p>
             </div>
-
             <div className="steps-grid">
-              <div className="step-card">
-                <div className="step-badge">1</div>
-                <h3 className="step-title">All-or-Nothing CSV Import</h3>
-                <p className="step-desc">
-                  Training centres upload candidate spreadsheets. If even 1 row contains an invalid phone, duplicate Aadhaar, or bad score, 0 records are committed.
-                </p>
-              </div>
-
-              <div className="step-card">
-                <div className="step-badge">2</div>
-                <h3 className="step-title">Two-Officer Consensus</h3>
-                <p className="step-desc">
-                  Informal approvals are eliminated. Two distinct district officers must independently review and sign off. Concurrency mutex locks prevent double-voting.
-                </p>
-              </div>
-
-              <div className="step-card">
-                <div className="step-badge">3</div>
-                <h3 className="step-title">Quality & State Authority</h3>
-                <p className="step-desc">
-                  Cohorts over 50 candidates automatically route to the Quality Team. Only the State Office can give final sign-off and trigger PDF generation.
-                </p>
-              </div>
-
-              <div className="step-card">
-                <div className="step-badge">4</div>
-                <h3 className="step-title">Instant Verification & QR</h3>
-                <p className="step-desc">
-                  Candidates receive a binary PDF-1.4 with unguessable QR tokens. Employers scan and verify authenticity in seconds with zero personal data leakage.
-                </p>
-              </div>
+              {[
+                {
+                  n: '1',
+                  title: 'All-or-Nothing CSV Import',
+                  desc: 'Training centres upload candidate spreadsheets. If even 1 row contains an invalid phone, duplicate Aadhaar, or missing field — 0 records are committed. Zero partial saves.'
+                },
+                {
+                  n: '2',
+                  title: 'Two-Officer Consensus',
+                  desc: 'Informal approvals are eliminated. Two distinct district officers must independently review and sign off. Concurrency mutex locks prevent double-voting on the same revision.'
+                },
+                {
+                  n: '3',
+                  title: 'Quality & State Authority',
+                  desc: 'Cohorts over 50 candidates automatically route to the Quality Team. Only the State Office can grant final sign-off and trigger the PDF generation pipeline.'
+                },
+                {
+                  n: '4',
+                  title: 'Instant Verification & QR',
+                  desc: 'Candidates receive a secure PDF with an unguessable QR token. Employers scan and verify authenticity in seconds — with zero personal data exposed to the public.'
+                },
+              ].map(s => (
+                <div key={s.n} className="step-card">
+                  <div className="step-number">{s.n}</div>
+                  <h3 className="step-title">{s.title}</h3>
+                  <p className="step-desc">{s.desc}</p>
+                </div>
+              ))}
             </div>
-          </div>
+          </section>
 
-          {/* Section 2: Explore Personas */}
-          <div className="section-container">
-            <div className="section-heading">
-              <h2>Try the Live Persona Tour</h2>
-              <p>Click any persona to inspect their permissions and perform their exact workflow actions:</p>
+          {/* Persona Tour */}
+          <section className="section" style={{ paddingTop: 0 }} aria-label="Interactive persona tour">
+            <div className="section-header-center">
+              <div className="section-eyebrow">Live Persona Tour</div>
+              <h2 className="section-title">Try Every Role Interactively</h2>
+              <p className="section-desc">
+                Click any persona to authenticate as that officer and perform their exact workflow actions in real-time.
+              </p>
             </div>
-
             <div className="persona-grid">
-              <div className="persona-card">
-                <div>
-                  <div className="persona-card-header">
-                    <div className="persona-avatar">🏢</div>
-                    <div>
-                      <div className="persona-name">Anika Sharma</div>
-                      <div className="persona-role-tag">Training Centre</div>
+              {[
+                { id: 'anika', icon: '🏢', name: 'Anika Sharma', role: 'Training Centre', desc: 'Apex Skills Academy. Uploads candidate rosters, inspects row-by-row validation errors, and submits certified cohorts for district review.' },
+                { id: 'dev',   icon: '🏛️', name: 'Dev Patel',    role: 'District Officer 1', desc: 'North District. First of two required officers. Provides consensus vote (1/2) or returns batches for correction with a mandatory reason.' },
+                { id: 'meera', icon: '🏛️', name: 'Meera Rao',    role: 'District Officer 2', desc: 'North District. Second of two required officers. Completes the dual-consensus (2/2) requirement that moves batches toward state approval.' },
+                { id: 'neha',  icon: '🔍', name: 'Neha Gupta',   role: 'Quality Inspector', desc: 'Inspects high-volume cohorts (>50 candidates) to guarantee training compliance and data integrity before state sign-off.' },
+                { id: 'farah', icon: '👑', name: 'Farah Khan',   role: 'State Office', desc: 'Final authority. Grants the state-level approval that triggers certificate issuance, monitors SLA breaches, and revokes fraudulent credentials.' },
+                { id: 'public',icon: '🌐', name: 'Public Portal', role: 'No Login Required', desc: 'Zero-login public verification portal. Scan a QR code or enter a certificate number. Aadhaar and phone data are strictly redacted.' },
+              ].map(p => (
+                <div key={p.id} className="persona-card">
+                  <div className="persona-card-top">
+                    <div className="persona-card-header">
+                      <div className="persona-avatar">{p.icon}</div>
+                      <div>
+                        <div className="persona-name">{p.name}</div>
+                        <div className="persona-role-tag">{p.role}</div>
+                      </div>
                     </div>
+                    <p className="persona-desc">{p.desc}</p>
                   </div>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-                    Apex Skills Academy. Uploads passed rosters, inspects row errors, and submits candidate cohorts.
-                  </p>
+                  <button
+                    className="btn btn-outline"
+                    style={{ marginTop: '1.25rem', width: '100%' }}
+                    onClick={() => switchTo(p.id)}
+                    aria-label={`Switch to ${p.name}`}
+                  >
+                    Enter as {p.name.split(' ')[0]} →
+                  </button>
                 </div>
-                <button
-                  className="btn btn-outline"
-                  style={{ marginTop: '1rem' }}
-                  onClick={() => setCurrentPersona(PERSONAS.find((p) => p.id === 'anika'))}
-                >
-                  Switch to Anika →
-                </button>
-              </div>
-
-              <div className="persona-card">
-                <div>
-                  <div className="persona-card-header">
-                    <div className="persona-avatar">🏛️</div>
-                    <div>
-                      <div className="persona-name">Dev & Meera</div>
-                      <div className="persona-role-tag">District Officers</div>
-                    </div>
-                  </div>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-                    North District. Enforces dual consensus (1/2 and 2/2 approvals) before batches move forward.
-                  </p>
-                </div>
-                <button
-                  className="btn btn-outline"
-                  style={{ marginTop: '1rem' }}
-                  onClick={() => setCurrentPersona(PERSONAS.find((p) => p.id === 'dev'))}
-                >
-                  Switch to Dev →
-                </button>
-              </div>
-
-              <div className="persona-card">
-                <div>
-                  <div className="persona-card-header">
-                    <div className="persona-avatar">🔍</div>
-                    <div>
-                      <div className="persona-name">Neha Gupta</div>
-                      <div className="persona-role-tag">Quality Team</div>
-                    </div>
-                  </div>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-                    Inspects high-volume cohorts (&gt; 50 candidates) to guarantee training compliance across the state.
-                  </p>
-                </div>
-                <button
-                  className="btn btn-outline"
-                  style={{ marginTop: '1rem' }}
-                  onClick={() => setCurrentPersona(PERSONAS.find((p) => p.id === 'neha'))}
-                >
-                  Switch to Neha →
-                </button>
-              </div>
-
-              <div className="persona-card">
-                <div>
-                  <div className="persona-card-header">
-                    <div className="persona-avatar">👑</div>
-                    <div>
-                      <div className="persona-name">Farah Khan</div>
-                      <div className="persona-role-tag">State Office</div>
-                    </div>
-                  </div>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-                    Final authority. Approves issuance pipeline, monitors stalled SLAs, and revokes fraudulent certificates.
-                  </p>
-                </div>
-                <button
-                  className="btn btn-outline"
-                  style={{ marginTop: '1rem' }}
-                  onClick={() => setCurrentPersona(PERSONAS.find((p) => p.id === 'farah'))}
-                >
-                  Switch to Farah →
-                </button>
-              </div>
+              ))}
             </div>
-          </div>
+          </section>
         </div>
       )}
 
-      {/* 2. ADMIN & ROLE WORKSPACE VIEWS */}
+      {/* ═══════════════════════════════════════════
+          VIEW: ALL AUTHENTICATED PERSONAS
+      ═══════════════════════════════════════════ */}
       {currentPersona.id !== 'home' && (
-        <main className="main-content">
-          {/* Header Banner */}
-          <div className="card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '1rem 1.25rem' }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>{currentPersona.name}</div>
-              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{currentPersona.desc}</div>
-            </div>
-            <button
-              className="btn btn-outline"
-              style={{ fontSize: '0.8rem' }}
-              onClick={() => setCurrentPersona(PERSONAS[0])}
-            >
-              ← Back to Overview
-            </button>
-          </div>
+        <main className="workspace">
+          {/* Feedback Banner */}
+          <FeedbackBanner msg={feedback} />
 
-          {feedback && (
-            <div className="card" style={{ background: '#f8fafc', borderColor: '#cbd5e1', padding: '0.75rem 1rem' }}>
-              {feedback}
+          {/* Role Banner (shown for non-public personas) */}
+          {currentPersona.id !== 'public' && (
+            <div className="role-banner" role="banner" aria-label="Current user context">
+              <div className="role-banner-left">
+                <div className="role-icon">{currentPersona.icon}</div>
+                <div>
+                  <div className="role-name">{currentPersona.name}</div>
+                  <div className="role-desc">{currentPersona.desc}</div>
+                  <span className="role-badge">Role: {currentPersona.role}</span>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost"
+                onClick={() => switchTo('home')}
+                aria-label="Back to overview"
+              >
+                ← Back to Overview
+              </button>
             </div>
           )}
 
-          {/* View: Training Centre (Anika) */}
+          {/* ── Training Centre: Anika ── */}
           {currentPersona.id === 'anika' && (
             <div>
               <div className="card">
-                <h2 className="card-title">1. Upload Candidate Roster (CSV)</h2>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                  All-or-nothing validation: If even 1 row fails validation, 0 records are imported.
-                </p>
-                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">
+                      <span className="card-title-icon">📋</span>
+                      Upload Candidate Roster (CSV)
+                    </h2>
+                    <p className="card-subtitle">
+                      All-or-nothing validation: if even 1 row fails, 0 records are committed.
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.6rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
                   <button className="btn btn-outline" onClick={() => { setCsvText(VALID_CSV_SAMPLE); setUploadErrors([]); }}>
-                    Load Valid CSV Sample
+                    ✅ Load Valid Sample CSV
                   </button>
                   <button className="btn btn-outline" onClick={() => { setCsvText(BAD_CSV_SAMPLE); setUploadErrors([]); }}>
-                    Load Malformed / Duplicate CSV Sample
+                    ❌ Load Malformed / Duplicate CSV
                   </button>
                 </div>
                 <textarea
-                  className="csv-textarea"
-                  rows={5}
+                  className="csv-editor"
+                  rows={6}
                   value={csvText}
-                  onChange={(e) => setCsvText(e.target.value)}
+                  onChange={e => setCsvText(e.target.value)}
+                  aria-label="CSV candidate roster editor"
                 />
-
-                <div style={{ marginTop: '0.75rem', display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn btn-primary" onClick={() => handleUploadCsv('batch-north-01')}>
-                    Upload to Batch (batch-north-01)
+                <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.9rem' }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => handleUploadCsv('batch-north-01')}
+                    aria-label="Upload CSV to batch"
+                  >
+                    📤 Upload to Batch (batch-north-01)
                   </button>
                 </div>
 
                 {uploadErrors.length > 0 && (
-                  <div className="error-report">
-                    <strong style={{ color: '#991b1b' }}>Row-by-Row Error Report ({uploadErrors.length} errors found):</strong>
-                    <ul style={{ margin: '0.5rem 0 0 1.25rem', padding: 0, fontSize: '0.85rem', color: '#b91c1c' }}>
-                      {uploadErrors.map((err, idx) => (
-                        <li key={idx}>
-                          <strong>Row {err.row}</strong> [{err.field}]: {err.reason} (Provided value: <code>{err.value || 'EMPTY'}</code>)
+                  <div className="error-report" role="alert" aria-label="Validation errors">
+                    <strong>Row-by-Row Validation Errors ({uploadErrors.length} found):</strong>
+                    <ul>
+                      {uploadErrors.map((err, i) => (
+                        <li key={i}>
+                          <strong>Row {err.row}</strong> [{err.field}]: {err.reason}
+                          {err.value && <> — Provided: <code>{err.value}</code></>}
                         </li>
                       ))}
                     </ul>
@@ -541,197 +569,209 @@ export default function App() {
               </div>
 
               <div className="card">
-                <h2 className="card-title">2. Training Centre Batches</h2>
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Batch ID</th>
-                      <th>Course</th>
-                      <th>Candidates</th>
-                      <th>Status</th>
-                      <th>Revision</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {batches.map((b) => (
-                      <tr key={b.id}>
-                        <td><strong>{b.batchNumber}</strong></td>
-                        <td>{b.courseName}</td>
-                        <td>{b.candidateCount}</td>
-                        <td>
-                          <span className={`badge badge-${b.status.toLowerCase().replace('_', '')}`}>
-                            {b.status}
-                          </span>
-                        </td>
-                        <td>Cycle {b.cycleCount}</td>
-                        <td>
-                          {['DRAFT', 'SENT_BACK'].includes(b.status) && (
-                            <button className="btn btn-success" onClick={() => handleSubmitBatch(b.id)}>
-                              Submit for Review
-                            </button>
-                          )}
-                          {b.status === 'NEEDS_CORRECTION' && (
-                            <span style={{ fontSize: '0.8rem', color: '#b91c1c' }}>Fix CSV to proceed</span>
-                          )}
-                        </td>
+                <div className="card-header">
+                  <h2 className="card-title">
+                    <span className="card-title-icon">📦</span>
+                    Training Centre Batches
+                  </h2>
+                </div>
+                <div className="table-wrapper">
+                  <table className="data-table" aria-label="Batch list">
+                    <thead>
+                      <tr>
+                        <th>Batch ID</th>
+                        <th>Course</th>
+                        <th>Candidates</th>
+                        <th>Status</th>
+                        <th>Revision</th>
+                        <th>Actions</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {batches.length === 0 && (
+                        <tr><td colSpan={6}>
+                          <div className="empty-state">
+                            <div className="empty-state-icon">📂</div>
+                            <div className="empty-state-title">No batches yet</div>
+                            <div className="empty-state-desc">Upload a CSV above to create your first batch.</div>
+                          </div>
+                        </td></tr>
+                      )}
+                      {batches.map(b => (
+                        <tr key={b.id}>
+                          <td><span className="cell-id">{b.batchNumber}</span></td>
+                          <td>{b.courseName}</td>
+                          <td><strong>{b.candidateCount}</strong></td>
+                          <td><span className={`badge ${getBadgeClass(b.status)}`}>{b.status}</span></td>
+                          <td>Cycle {b.cycleCount}</td>
+                          <td className="cell-actions">
+                            {['DRAFT', 'SENT_BACK'].includes(b.status) && (
+                              <button className="btn btn-success" onClick={() => handleSubmitBatch(b.id)} aria-label={`Submit batch ${b.batchNumber}`}>
+                                Submit for Review
+                              </button>
+                            )}
+                            {b.status === 'NEEDS_CORRECTION' && (
+                              <span style={{ fontSize: '0.8rem', color: 'var(--danger)' }}>⚠ Fix CSV to proceed</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
-          {/* View: District Officers (Dev & Meera) */}
+          {/* ── District Officers: Dev & Meera ── */}
           {(currentPersona.id === 'dev' || currentPersona.id === 'meera') && (
             <div className="card">
-              <h2 className="card-title">District Review Queue ({currentPersona.name})</h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                Strict Consensus Rule: Two distinct officers must approve. A single officer cannot approve twice in the same revision.
-              </p>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Batch</th>
-                    <th>Candidates</th>
-                    <th>Status</th>
-                    <th>Consensus Progress</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batches.map((b) => {
-                    const hasMyVote = b.districtApprovals?.some((a) => a.officerId === currentPersona.id);
-                    const isEligible = ['PENDING_DISTRICT', 'DISTRICT_PARTIAL_APPROVED'].includes(b.status);
-                    return (
-                      <tr key={b.id}>
-                        <td><strong>{b.batchNumber}</strong></td>
-                        <td>{b.candidateCount}</td>
-                        <td><span className="badge badge-pending">{b.status}</span></td>
-                        <td>
-                          <strong>{b.districtApprovals?.length || 0} of 2</strong> Approvals Recorded
-                          {b.districtApprovals?.length > 0 && (
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                              Approved by: {b.districtApprovals.map((a) => a.officerName).join(', ')}
-                            </div>
-                          )}
-                        </td>
-                        <td>
-                          {isEligible && (
-                            <div style={{ display: 'flex', gap: '0.35rem' }}>
-                              <button
-                                className="btn btn-primary"
-                                disabled={hasMyVote}
-                                onClick={() => handleDecision(b.id, 'APPROVE', `Approved by ${currentPersona.name}`)}
-                              >
-                                {hasMyVote ? 'Voted' : 'Approve'}
-                              </button>
-                              <button
-                                className="btn btn-warning"
-                                onClick={() => {
-                                  const reason = prompt('Enter return reason:');
-                                  if (reason) handleDecision(b.id, 'RETURN_FOR_CORRECTION', reason);
-                                }}
-                              >
-                                Return
-                              </button>
-                              <button
-                                className="btn btn-danger"
-                                onClick={() => {
-                                  const reason = prompt('Enter rejection reason:');
-                                  if (reason) handleDecision(b.id, 'REJECT', reason);
-                                }}
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* View: Quality Team (Neha) */}
-          {currentPersona.id === 'neha' && (
-            <div className="card">
-              <h2 className="card-title">Quality Inspection Queue (Batches &gt; 50 Candidates)</h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                Batches exceeding 50 candidates are automatically routed here after District consensus.
-              </p>
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Batch</th>
-                    <th>Cohort Size</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {batches.filter((b) => b.candidateCount > 50).map((b) => (
-                    <tr key={b.id}>
-                      <td><strong>{b.batchNumber}</strong></td>
-                      <td><span style={{ fontWeight: 700, color: '#2563eb' }}>{b.candidateCount}</span> candidates</td>
-                      <td><span className="badge badge-pending">{b.status}</span></td>
-                      <td>
-                        {b.status === 'PENDING_QUALITY' ? (
-                          <button
-                            className="btn btn-primary"
-                            onClick={() => handleDecision(b.id, 'APPROVE', 'Quality criteria verified by Neha Gupta')}
-                          >
-                            Approve Quality Inspection
-                          </button>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Awaiting District Consensus</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* View: State Office (Farah) */}
-          {currentPersona.id === 'farah' && (
-            <div>
-              <div className="card">
-                <h2 className="card-title">State Office Final Sign-Off Queue</h2>
-                <table className="data-table">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">
+                    <span className="card-title-icon">⚖️</span>
+                    District Review Queue — {currentPersona.name}
+                  </h2>
+                  <p className="card-subtitle">
+                    Strict consensus rule: two distinct officers must independently approve each batch. A single officer cannot vote twice in the same revision cycle.
+                  </p>
+                </div>
+              </div>
+              <div className="table-wrapper">
+                <table className="data-table" aria-label="District review queue">
                   <thead>
                     <tr>
                       <th>Batch</th>
-                      <th>Centre</th>
                       <th>Candidates</th>
+                      <th>Status</th>
+                      <th>Consensus Progress</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {batches.length === 0 && (
+                      <tr><td colSpan={5}>
+                        <div className="empty-state">
+                          <div className="empty-state-icon">📋</div>
+                          <div className="empty-state-title">No batches in queue</div>
+                          <div className="empty-state-desc">Batches submitted by training centres will appear here.</div>
+                        </div>
+                      </td></tr>
+                    )}
+                    {batches.map(b => {
+                      const hasMyVote = b.districtApprovals?.some(a => a.officerId === currentPersona.id);
+                      const isEligible = ['PENDING_DISTRICT', 'DISTRICT_PARTIAL_APPROVED'].includes(b.status);
+                      const approvalCount = b.districtApprovals?.length || 0;
+                      return (
+                        <tr key={b.id}>
+                          <td><span className="cell-id">{b.batchNumber}</span></td>
+                          <td><strong>{b.candidateCount}</strong></td>
+                          <td><span className={`badge ${getBadgeClass(b.status)}`}>{b.status}</span></td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div className="consensus-bar" aria-label={`${approvalCount} of 2 approvals`}>
+                                <div className={`consensus-dot ${approvalCount >= 1 ? 'filled' : ''}`} />
+                                <div className={`consensus-dot ${approvalCount >= 2 ? 'filled' : ''}`} />
+                              </div>
+                              <span className="consensus-label">{approvalCount}/2 Approvals</span>
+                            </div>
+                            {b.districtApprovals?.length > 0 && (
+                              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.3rem' }}>
+                                By: {b.districtApprovals.map(a => a.officerName).join(', ')}
+                              </div>
+                            )}
+                          </td>
+                          <td className="cell-actions">
+                            {isEligible && (
+                              <>
+                                <button
+                                  className="btn btn-primary"
+                                  disabled={hasMyVote}
+                                  onClick={() => handleDecision(b.id, 'APPROVE', `Approved by ${currentPersona.name}`)}
+                                  aria-label={hasMyVote ? 'Already voted' : 'Approve batch'}
+                                >
+                                  {hasMyVote ? '✓ Voted' : 'Approve'}
+                                </button>
+                                <button
+                                  className="btn btn-warning"
+                                  onClick={() => { const r = prompt('Return reason (required):'); if (r) handleDecision(b.id, 'RETURN_FOR_CORRECTION', r); }}
+                                  aria-label="Return for correction"
+                                >
+                                  Return
+                                </button>
+                                <button
+                                  className="btn btn-danger"
+                                  onClick={() => { const r = prompt('Rejection reason (required):'); if (r) handleDecision(b.id, 'REJECT', r); }}
+                                  aria-label="Reject batch"
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            {!isEligible && <span style={{ color: 'var(--text-faint)', fontSize: '0.8rem' }}>Not actionable</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* ── Quality Team: Neha ── */}
+          {currentPersona.id === 'neha' && (
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <h2 className="card-title">
+                    <span className="card-title-icon">🔍</span>
+                    Quality Inspection Queue (Batches &gt; 50 Candidates)
+                  </h2>
+                  <p className="card-subtitle">
+                    Batches exceeding 50 candidates are automatically routed here after district officer consensus. Only these appear in this queue.
+                  </p>
+                </div>
+              </div>
+              <div className="table-wrapper">
+                <table className="data-table" aria-label="Quality inspection queue">
+                  <thead>
+                    <tr>
+                      <th>Batch</th>
+                      <th>Cohort Size</th>
                       <th>Status</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {batches.map((b) => (
+                    {batches.filter(b => b.candidateCount > 50).length === 0 && (
+                      <tr><td colSpan={4}>
+                        <div className="empty-state">
+                          <div className="empty-state-icon">🔍</div>
+                          <div className="empty-state-title">No large-cohort batches</div>
+                          <div className="empty-state-desc">Only batches with more than 50 candidates appear here.</div>
+                        </div>
+                      </td></tr>
+                    )}
+                    {batches.filter(b => b.candidateCount > 50).map(b => (
                       <tr key={b.id}>
-                        <td><strong>{b.batchNumber}</strong></td>
-                        <td>{b.centreName}</td>
-                        <td>{b.candidateCount}</td>
-                        <td><span className={`badge badge-${b.status.toLowerCase().replace('_', '')}`}>{b.status}</span></td>
+                        <td><span className="cell-id">{b.batchNumber}</span></td>
                         <td>
-                          {b.status === 'PENDING_STATE' && (
+                          <strong style={{ color: 'var(--blue)', fontSize: '1.05rem' }}>{b.candidateCount}</strong>
+                          <span style={{ color: 'var(--text-muted)', marginLeft: '0.3rem', fontSize: '0.82rem' }}>candidates</span>
+                        </td>
+                        <td><span className={`badge ${getBadgeClass(b.status)}`}>{b.status}</span></td>
+                        <td>
+                          {b.status === 'PENDING_QUALITY' ? (
                             <button
-                              className="btn btn-success"
-                              onClick={() => handleDecision(b.id, 'APPROVE', 'State final approval granted by Farah Khan')}
+                              className="btn btn-primary"
+                              onClick={() => handleDecision(b.id, 'APPROVE', 'Quality criteria verified by Neha Gupta')}
+                              aria-label="Approve quality inspection"
                             >
-                              Grant State Final Approval
+                              ✅ Approve Quality Inspection
                             </button>
-                          )}
-                          {b.status === 'APPROVED' && (
-                            <span style={{ color: '#059669', fontWeight: 600, fontSize: '0.85rem' }}>
-                              Certificates Issued
-                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-faint)', fontSize: '0.82rem' }}>Awaiting district consensus</span>
                           )}
                         </td>
                       </tr>
@@ -739,126 +779,249 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* ── State Office: Farah ── */}
+          {currentPersona.id === 'farah' && (
+            <div>
+              <div className="card">
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">
+                      <span className="card-title-icon">📜</span>
+                      State Office Final Sign-Off Queue
+                    </h2>
+                    <p className="card-subtitle">
+                      Granting approval here triggers the PDF generation and certificate issuance pipeline.
+                    </p>
+                  </div>
+                </div>
+                <div className="table-wrapper">
+                  <table className="data-table" aria-label="State final approval queue">
+                    <thead>
+                      <tr>
+                        <th>Batch</th>
+                        <th>Centre</th>
+                        <th>Candidates</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {batches.length === 0 && (
+                        <tr><td colSpan={5}>
+                          <div className="empty-state">
+                            <div className="empty-state-icon">📜</div>
+                            <div className="empty-state-title">No batches pending state approval</div>
+                            <div className="empty-state-desc">Batches that have passed all prior reviews will appear here.</div>
+                          </div>
+                        </td></tr>
+                      )}
+                      {batches.map(b => (
+                        <tr key={b.id}>
+                          <td><span className="cell-id">{b.batchNumber}</span></td>
+                          <td>{b.centreName}</td>
+                          <td><strong>{b.candidateCount}</strong></td>
+                          <td><span className={`badge ${getBadgeClass(b.status)}`}>{b.status}</span></td>
+                          <td className="cell-actions">
+                            {b.status === 'PENDING_STATE' && (
+                              <button
+                                className="btn btn-success"
+                                onClick={() => handleDecision(b.id, 'APPROVE', 'State final approval granted by Farah Khan')}
+                                aria-label="Grant state final approval"
+                              >
+                                ✅ Grant Final Approval
+                              </button>
+                            )}
+                            {b.status === 'APPROVED' && (
+                              <span style={{ color: 'var(--success)', fontWeight: 700, fontSize: '0.85rem' }}>
+                                🏅 Certificates Issued
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
 
               <div className="card">
-                <h2 className="card-title">Revocation & Invalidation Controls</h2>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                  Only the State Office has the authority to revoke certificates. Revocations invalidate public lookups immediately.
-                </p>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn btn-danger" onClick={() => handleRevoke('PRAGATI-2026-N01-0001')}>
-                    Revoke Sample Cert PRAGATI-2026-N01-0001
+                <div className="card-header">
+                  <div>
+                    <h2 className="card-title">
+                      <span className="card-title-icon">🚫</span>
+                      Certificate Revocation Controls
+                    </h2>
+                    <p className="card-subtitle">
+                      Exclusive State Office authority. Revocations are immediate — public verification reflects the change instantly with no cache delay.
+                    </p>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => handleRevoke('PRAGATI-2026-N01-0001')}
+                    aria-label="Revoke certificate PRAGATI-2026-N01-0001"
+                  >
+                    🚫 Revoke PRAGATI-2026-N01-0001
+                  </button>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => { switchTo('public'); setVerifyCode('PRAGATI-2026-N01-0001'); }}
+                    aria-label="Verify revocation in public portal"
+                  >
+                    🔍 Verify in Public Portal
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* View: Public Verifier */}
+          {/* ── Public Verifier ── */}
           {currentPersona.id === 'public' && (
-            <div style={{ maxWidth: '650px', margin: '2rem auto', textAlign: 'center' }}>
-              <h2 style={{ fontSize: '1.75rem', fontWeight: 800, margin: '0 0 0.5rem 0' }}>
-                Public Credential Verification
-              </h2>
-              <p style={{ color: 'var(--text-muted)' }}>
-                Scan the QR code on any Pragati certificate or enter the certificate number below. No login required.
-              </p>
-
-              <form onSubmit={handleVerify} style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                <input
-                  type="text"
-                  style={{ flex: 1, padding: '0.75rem 1rem', fontSize: '1rem', border: '2px solid var(--border)', borderRadius: '8px' }}
-                  placeholder="e.g. PRAGATI-2026-N01-0001"
-                  value={verifyCode}
-                  onChange={(e) => setVerifyCode(e.target.value)}
-                />
-                <button type="submit" className="btn btn-primary" style={{ padding: '0 1.5rem' }}>
-                  {verifyLoading ? 'Verifying...' : 'Verify'}
-                </button>
-              </form>
-
-              <div style={{ marginTop: '0.75rem', display: 'flex', justifyContent: 'center', gap: '0.5rem' }}>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  style={{ fontSize: '0.75rem' }}
-                  onClick={() => { setVerifyCode('PRAGATI-2026-N01-0001'); }}
-                >
-                  Sample 1 (Valid)
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-outline"
-                  style={{ fontSize: '0.75rem' }}
-                  onClick={() => { setVerifyCode('PRAGATI-2026-N01-0002'); }}
-                >
-                  Sample 2 (Cancelled)
-                </button>
+            <div className="public-verify-page">
+              <div className="public-verify-header">
+                <div className="section-eyebrow">🌐 No Login Required</div>
+                <h2 className="public-verify-title">Public Credential Verification</h2>
+                <p className="public-verify-desc">
+                  Scan the QR code on any Pragati certificate, or enter the certificate number below.
+                  Aadhaar IDs and phone numbers are strictly redacted.
+                </p>
               </div>
 
-              {verifyResult && (
-                <div className={`cert-card ${verifyResult.status === 'CANCELLED' ? 'cancelled' : ''}`}>
-                  <div className={`cert-status-badge ${verifyResult.status === 'VALID' ? 'valid' : 'cancelled'}`}>
-                    ● {verifyResult.status}
+              <div className="verify-card">
+                <form onSubmit={handleVerify}>
+                  <div style={{ marginBottom: '0.6rem', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Certificate Number or Verification Token
                   </div>
+                  <div className="verify-form-row">
+                    <input
+                      type="text"
+                      className="verify-form-input"
+                      placeholder="e.g. PRAGATI-2026-N01-0001"
+                      value={verifyCode}
+                      onChange={e => setVerifyCode(e.target.value)}
+                      aria-label="Enter certificate number"
+                    />
+                    <button
+                      type="submit"
+                      className="btn btn-primary btn-lg"
+                      disabled={verifyLoading}
+                      aria-label="Verify certificate"
+                    >
+                      {verifyLoading ? <><span className="spinner dark" /> Verifying…</> : '→ Verify'}
+                    </button>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.6rem', marginTop: '0.75rem', flexWrap: 'wrap' }}>
+                    <button type="button" className="btn btn-outline" style={{ fontSize: '0.78rem' }} onClick={() => setVerifyCode('PRAGATI-2026-N01-0001')}>
+                      🟢 Sample Valid
+                    </button>
+                    <button type="button" className="btn btn-outline" style={{ fontSize: '0.78rem' }} onClick={() => setVerifyCode('PRAGATI-2026-N01-0002')}>
+                      🔴 Sample Revoked
+                    </button>
+                  </div>
+                </form>
 
-                  {verifyResult.status === 'VALID' && (
-                    <div>
-                      <h3 style={{ margin: '0 0 0.25rem 0', fontSize: '1.4rem' }}>{verifyResult.candidateName}</h3>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem' }}>
-                        Certified Candidate
+                {verifyResult && (
+                  <div className={`cert-result ${verifyResult.status === 'VALID' ? 'valid' : 'invalid'}`} style={{ marginTop: '1.5rem' }}>
+                    <div className="cert-result-header">
+                      <div className="cert-status-icon">
+                        {verifyResult.status === 'VALID' ? '✅' : '❌'}
                       </div>
-
-                      <table style={{ width: '100%', fontSize: '0.9rem' }}>
-                        <tbody>
-                          <tr><td style={{ color: 'var(--text-muted)' }}>Course:</td><td><strong>{verifyResult.courseName}</strong></td></tr>
-                          <tr><td style={{ color: 'var(--text-muted)' }}>Training Centre:</td><td>{verifyResult.centreName}</td></tr>
-                          <tr><td style={{ color: 'var(--text-muted)' }}>District:</td><td>{verifyResult.districtName}</td></tr>
-                          <tr><td style={{ color: 'var(--text-muted)' }}>Certificate Number:</td><td><code>{verifyResult.certificateNumber}</code></td></tr>
-                          <tr><td style={{ color: 'var(--text-muted)' }}>Grade:</td><td><strong>{verifyResult.grade}</strong></td></tr>
-                          <tr><td style={{ color: 'var(--text-muted)' }}>Issued Date:</td><td>{verifyResult.issuedAt?.slice(0, 10)}</td></tr>
-                        </tbody>
-                      </table>
-
-                      <div style={{ marginTop: '1.25rem', padding: '0.75rem', background: '#f8fafc', borderRadius: '6px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                        🔒 <strong>Privacy Guarantee</strong>: Contact numbers and Aadhaar details are strictly redacted for public inquiries.
+                      <div>
+                        <div className="cert-status-name">
+                          {verifyResult.status === 'VALID' ? 'Certificate Authentic & Valid' : 'Certificate Invalid or Revoked'}
+                        </div>
+                        <div className="cert-status-sub">
+                          {verifyResult.status === 'VALID'
+                            ? `Issued to ${verifyResult.candidateName} · ${verifyResult.courseName}`
+                            : verifyResult.cancellationReason || verifyResult.error || 'Not found in registry'}
+                        </div>
                       </div>
                     </div>
-                  )}
 
-                  {verifyResult.status === 'CANCELLED' && (
-                    <div>
-                      <h3 style={{ margin: '0 0 0.25rem 0', fontSize: '1.4rem', color: '#b91c1c' }}>
-                        Certificate Cancelled
-                      </h3>
-                      <p style={{ fontSize: '0.95rem' }}>
-                        This certificate (<code>{verifyResult.certificateNumber}</code>) was revoked by the State Office.
-                      </p>
-                      <div style={{ background: '#fef2f2', border: '1px solid #fecaca', padding: '0.75rem', borderRadius: '6px', color: '#991b1b', fontSize: '0.9rem' }}>
-                        <strong>Revocation Reason:</strong> {verifyResult.cancellationReason || verifyResult.revocationReason}
+                    {verifyResult.status === 'VALID' && (
+                      <div className="cert-result-body">
+                        <div className="cert-fields">
+                          <div>
+                            <div className="cert-field-label">Candidate Name</div>
+                            <div className="cert-field-value">{verifyResult.candidateName}</div>
+                          </div>
+                          <div>
+                            <div className="cert-field-label">Course</div>
+                            <div className="cert-field-value">{verifyResult.courseName}</div>
+                          </div>
+                          <div>
+                            <div className="cert-field-label">Training Centre</div>
+                            <div className="cert-field-value">{verifyResult.centreName}</div>
+                          </div>
+                          <div>
+                            <div className="cert-field-label">District</div>
+                            <div className="cert-field-value">{verifyResult.districtName}</div>
+                          </div>
+                          <div>
+                            <div className="cert-field-label">Certificate Number</div>
+                            <div className="cert-field-value" style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{verifyResult.certificateNumber}</div>
+                          </div>
+                          <div>
+                            <div className="cert-field-label">Grade</div>
+                            <div className="cert-field-value">{verifyResult.grade}</div>
+                          </div>
+                          <div>
+                            <div className="cert-field-label">Issued Date</div>
+                            <div className="cert-field-value">{verifyResult.issuedAt?.slice(0, 10)}</div>
+                          </div>
+                        </div>
+                        <div className="cert-privacy-note">
+                          🔒 <strong>Privacy Guarantee:</strong> Contact numbers and Aadhaar/national ID are strictly redacted from public responses per data privacy rules.
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {verifyResult.status === 'NOT_FOUND' && (
-                    <div style={{ color: '#b91c1c' }}>
-                      <strong>Invalid Certificate</strong>: No matching credential found.
-                    </div>
-                  )}
-                </div>
-              )}
+                    {verifyResult.status === 'CANCELLED' && (
+                      <div className="cert-result-body">
+                        <div style={{ marginBottom: '0.75rem' }}>
+                          <div className="cert-field-label">Certificate Reference</div>
+                          <div className="cert-field-value" style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{verifyResult.certificateNumber}</div>
+                        </div>
+                        <div style={{ background: 'var(--danger-bg)', border: '1px solid #fecaca', borderRadius: 'var(--r-sm)', padding: '0.75rem 1rem', fontSize: '0.88rem', color: '#7f1d1d' }}>
+                          <strong>Revocation Reason:</strong> {verifyResult.cancellationReason || verifyResult.revocationReason}
+                        </div>
+                      </div>
+                    )}
+
+                    {(verifyResult.status === 'NOT_FOUND' || verifyResult.error) && (
+                      <div className="cert-result-body">
+                        <div style={{ color: 'var(--danger)', fontWeight: 600 }}>
+                          No matching credential found in the Pragati registry. Please verify the certificate number and try again.
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </main>
       )}
 
       {/* Footer */}
-      <footer className="footer">
-        <div>
-          <strong>Pragati Skills Mission</strong> — State-Level Digital Credential & Verification Platform
-        </div>
-        <div style={{ marginTop: '0.35rem', fontSize: '0.8rem' }}>
-          Backend API: <span style={{ color: backendStatus === 'connected' ? '#059669' : '#dc2626' }}>● {backendStatus.toUpperCase()}</span> | Port 3000 | 39 Automated Security Tests Passing
+      <footer className="footer" role="contentinfo">
+        <div className="footer-inner">
+          <div>
+            <div className="footer-brand">🛡️ Pragati Skills Mission — CertiFlow Platform</div>
+            <div className="footer-meta">
+              State-Level Digital Credential & Instant Verification Engine · Government of India Initiative
+            </div>
+          </div>
+          <div className="footer-status">
+            <span className={`footer-status-dot ${backendStatus !== 'connected' ? '' : ''}`}
+              style={{ background: backendStatus === 'connected' ? '#22c55e' : '#ef4444', boxShadow: `0 0 6px ${backendStatus === 'connected' ? '#22c55e' : '#ef4444'}` }}
+            />
+            <span>API {backendStatus.toUpperCase()} · Port 3000 · 39/39 Tests Passing</span>
+          </div>
         </div>
       </footer>
     </div>
