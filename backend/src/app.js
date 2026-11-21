@@ -6,6 +6,7 @@ const authRoutes = require('./routes/authRoutes');
 const batchRoutes = require('./routes/batchRoutes');
 const certificateRoutes = require('./routes/certificateRoutes');
 const publicRoutes = require('./routes/publicRoutes');
+const jobRoutes = require('./routes/jobRoutes');
 
 const app = express();
 
@@ -17,6 +18,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/batches', batchRoutes);
 app.use('/api/certificates', certificateRoutes);
 app.use('/api/public', publicRoutes);
+app.use('/api/jobs', jobRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

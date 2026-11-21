@@ -435,9 +435,31 @@ async function handleDecision(req, res) {
         batch.status = 'APPROVED';
         dataStore.recordBatchAudit(batch, actor, 'STATE_FINAL_APPROVE', reason);
 
+        // Non-blocking: Enqueue background certificate issuance and delivery pipeline
+        const { queueManager } = require('../queues/queueManager');
+        const host = (typeof req.get === 'function' ? req.get('host') : req.headers && req.headers['host']) || 'localhost:3000';
+        const protocol = (req.connection && req.protocol) || 'http';
+        const baseUrl = `${protocol}://${host}`;
+
+        queueManager
+          .getQueue('issuance')
+          .add(
+            'issue-batch',
+            {
+              batchId: batch.id,
+              actor,
+              baseUrl
+            },
+            {
+              jobId: `issue-${batch.id}`
+            }
+          )
+          .catch((err) => console.error('[Issuance Queue Error]', err));
+
         return res.status(200).json({
           message: 'State final approval granted. Certificate issuance pipeline initiated.',
-          batch
+          batch,
+          jobEnqueued: true
         });
       }
 

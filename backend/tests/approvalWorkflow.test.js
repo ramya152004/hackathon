@@ -12,11 +12,15 @@ function api(method, url, { headers = {}, body = null } = {}) {
     const req = Readable.from(bodyStr ? [bodyStr] : []);
     req.method = method.toUpperCase();
     req.url = url;
+    req.connection = { encrypted: false };
+    req.protocol = 'http';
     req.headers = {
+      host: 'localhost:3000',
       'content-type': 'application/json',
       'content-length': Buffer.byteLength(bodyStr),
       ...Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]))
     };
+    req.get = (name) => req.headers[name.toLowerCase()];
 
     const res = new EventEmitter();
     res.statusCode = 200;
