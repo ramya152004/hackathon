@@ -30,3 +30,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Local runtime storage
+storage/certificates/*.pdf
+backend/storage/certificates/*.pdf

@@ -1,4 +1,4 @@
-// In-Memory Data Store with Mutex Concurrency Locks and Audit Trail
+// In-Memory Data Store with Mutex Concurrency Locks, Database Uniqueness Constraints, and Audit Trail
 
 class DataStore {
   constructor() {
@@ -66,11 +66,15 @@ class DataStore {
       {
         id: 'cert-uuid-001',
         certificateNumber: 'PRAGATI-2026-N01-0001',
+        candidateId: 'cand-seed-001',
+        batchId: 'batch-north-large-01',
         verificationCode: 'VERIF-7721-ABCD',
+        verificationUrl: 'http://localhost:3000/api/public/verify/VERIF-7721-ABCD',
         candidateName: 'Rahul S. Verma',
         courseName: 'Solar PV Installer',
         centreName: 'Apex Skills Academy',
         districtName: 'North District',
+        grade: 'A',
         status: 'ACTIVE',
         issuedAt: '2026-11-20T12:00:00Z',
         revokedAt: null,
@@ -81,11 +85,15 @@ class DataStore {
       {
         id: 'cert-uuid-002',
         certificateNumber: 'PRAGATI-2026-N01-0002',
+        candidateId: 'cand-seed-002',
+        batchId: 'batch-north-large-01',
         verificationCode: 'VERIF-8832-EFGH',
+        verificationUrl: 'http://localhost:3000/api/public/verify/VERIF-8832-EFGH',
         candidateName: 'Pooja K. Sharma',
         courseName: 'Solar PV Installer',
         centreName: 'Apex Skills Academy',
         districtName: 'North District',
+        grade: 'A+',
         status: 'REVOKED',
         issuedAt: '2026-11-19T10:00:00Z',
         revokedAt: '2026-11-20T14:30:00Z',
@@ -183,10 +191,45 @@ class DataStore {
     return created;
   }
 
+  findCertificateByCandidateId(candidateId) {
+    return this.certificates.find((c) => c.candidateId === candidateId);
+  }
+
+  findCertificatesByBatchId(batchId) {
+    return this.certificates.filter((c) => c.batchId === batchId);
+  }
+
   findCertificateByCode(code) {
     return this.certificates.find(
       (c) => c.certificateNumber === code || c.verificationCode === code || c.id === code
     );
+  }
+
+  /**
+   * Enforces PostgreSQL-level uniqueness constraints:
+   * 1. UNIQUE(candidate_id)
+   * 2. UNIQUE(certificate_number)
+   * 3. UNIQUE(verification_code)
+   */
+  insertCertificate(cert) {
+    if (this.certificates.some((c) => c.candidateId === cert.candidateId)) {
+      throw new Error(
+        'UNIQUE_CONSTRAINT_VIOLATION: duplicate key value violates unique constraint "uq_certificates_candidate_id"'
+      );
+    }
+    if (this.certificates.some((c) => c.certificateNumber === cert.certificateNumber)) {
+      throw new Error(
+        'UNIQUE_CONSTRAINT_VIOLATION: duplicate key value violates unique constraint "uq_certificates_number"'
+      );
+    }
+    if (this.certificates.some((c) => c.verificationCode === cert.verificationCode)) {
+      throw new Error(
+        'UNIQUE_CONSTRAINT_VIOLATION: duplicate key value violates unique constraint "uq_certificates_verification_code"'
+      );
+    }
+
+    this.certificates.push(cert);
+    return cert;
   }
 }
 
