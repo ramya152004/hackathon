@@ -1,4 +1,4 @@
-// In-Memory Data Store for Batches and Certificates
+// In-Memory Data Store for Batches, Candidates, and Certificates
 
 class DataStore {
   constructor() {
@@ -19,6 +19,7 @@ class DataStore {
         status: 'PENDING_DISTRICT',
         districtApprovals: [], // Stores officer user IDs who approved
         cycleCount: 1,
+        validationErrors: [],
         createdAt: new Date().toISOString()
       },
       {
@@ -33,6 +34,7 @@ class DataStore {
         status: 'PENDING_DISTRICT',
         districtApprovals: [],
         cycleCount: 1,
+        validationErrors: [],
         createdAt: new Date().toISOString()
       },
       {
@@ -47,9 +49,13 @@ class DataStore {
         status: 'PENDING_DISTRICT',
         districtApprovals: [],
         cycleCount: 1,
+        validationErrors: [],
         createdAt: new Date().toISOString()
       }
     ];
+
+    // Array of candidates linked to batches
+    this.candidates = [];
 
     this.certificates = [
       {
@@ -104,6 +110,29 @@ class DataStore {
 
   findBatchById(id) {
     return this.batches.find((b) => b.id === id);
+  }
+
+  getCandidatesForBatch(batchId) {
+    return this.candidates.filter((c) => c.batchId === batchId);
+  }
+
+  /**
+   * Atomically sets candidates for a batch (replaces existing candidates)
+   */
+  setCandidatesForBatch(batchId, newCandidates) {
+    // Remove existing candidates for this batch
+    this.candidates = this.candidates.filter((c) => c.batchId !== batchId);
+
+    // Insert new candidates with generated IDs
+    const created = newCandidates.map((c, idx) => ({
+      id: `cand-${batchId}-${idx + 1}`,
+      batchId,
+      ...c,
+      createdAt: new Date().toISOString()
+    }));
+
+    this.candidates.push(...created);
+    return created;
   }
 
   findCertificateByCode(code) {
