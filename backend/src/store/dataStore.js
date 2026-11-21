@@ -1,11 +1,14 @@
-// In-Memory Data Store for Batches, Candidates, and Certificates
+// In-Memory Data Store with Mutex Concurrency Locks and Audit Trail
 
 class DataStore {
   constructor() {
+    this.locks = new Map(); // batchId -> Promise chain (mutex)
     this.reset();
   }
 
   reset() {
+    this.locks.clear();
+
     this.batches = [
       {
         id: 'batch-north-large-01',
@@ -17,9 +20,10 @@ class DataStore {
         districtName: 'North District',
         candidateCount: 60,
         status: 'PENDING_DISTRICT',
-        districtApprovals: [], // Stores officer user IDs who approved
+        districtApprovals: [], // Array of { officerId, officerName, timestamp, cycleCount }
         cycleCount: 1,
         validationErrors: [],
+        auditHistory: [],
         createdAt: new Date().toISOString()
       },
       {
@@ -35,6 +39,7 @@ class DataStore {
         districtApprovals: [],
         cycleCount: 1,
         validationErrors: [],
+        auditHistory: [],
         createdAt: new Date().toISOString()
       },
       {
@@ -50,11 +55,11 @@ class DataStore {
         districtApprovals: [],
         cycleCount: 1,
         validationErrors: [],
+        auditHistory: [],
         createdAt: new Date().toISOString()
       }
     ];
 
-    // Array of candidates linked to batches
     this.candidates = [];
 
     this.certificates = [
@@ -70,7 +75,6 @@ class DataStore {
         issuedAt: '2026-11-20T12:00:00Z',
         revokedAt: null,
         revocationReason: null,
-        // Sensitive PII that must NEVER be leaked to public verification:
         phone: '+91 98765 43210',
         nationalId: 'XXXX-XXXX-9912'
       },
@@ -94,18 +98,69 @@ class DataStore {
     this.auditLogs = [];
   }
 
+  /**
+   * Concurrency protection: Serializes operations per batch ID (simulating DB row lock)
+   */
+  async withBatchLock(batchId, callback) {
+    const previousPromise = this.locks.get(batchId) || Promise.resolve();
+
+    let releaseLock;
+    const currentPromise = new Promise((resolve) => {
+      releaseLock = resolve;
+    });
+
+    this.locks.set(batchId, previousPromise.then(() => currentPromise));
+
+    try {
+      await previousPromise;
+      return await callback();
+    } finally {
+      releaseLock();
+    }
+  }
+
   logAudit(actor, action, entityType, entityId, metadata = {}) {
-    this.auditLogs.push({
+    const entry = {
       id: `audit-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
       timestamp: new Date().toISOString(),
-      actorId: actor.id || 'anonymous',
+      actorId: actor.id || actor.sub || 'anonymous',
       actorUsername: actor.username || 'anonymous',
       actorRole: actor.role || 'PUBLIC',
       action,
       entityType,
       entityId,
       metadata
+    };
+    this.auditLogs.push(entry);
+    return entry;
+  }
+
+  recordBatchAudit(batch, actor, decision, reason = null) {
+    const historyEntry = {
+      id: `hist-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      timestamp: new Date().toISOString(),
+      actorId: actor.sub || actor.id,
+      actorName: actor.name,
+      actorRole: actor.role,
+      decision,
+      reason: reason || null,
+      batchRevision: batch.cycleCount,
+      status: batch.status
+    };
+
+    if (!batch.auditHistory) {
+      batch.auditHistory = [];
+    }
+    batch.auditHistory.push(historyEntry);
+
+    this.logAudit(actor, decision, 'BATCH', batch.id, {
+      decision,
+      reason,
+      revision: batch.cycleCount,
+      newStatus: batch.status
     });
+
+    return historyEntry;
   }
 
   findBatchById(id) {
@@ -116,21 +171,14 @@ class DataStore {
     return this.candidates.filter((c) => c.batchId === batchId);
   }
 
-  /**
-   * Atomically sets candidates for a batch (replaces existing candidates)
-   */
   setCandidatesForBatch(batchId, newCandidates) {
-    // Remove existing candidates for this batch
     this.candidates = this.candidates.filter((c) => c.batchId !== batchId);
-
-    // Insert new candidates with generated IDs
     const created = newCandidates.map((c, idx) => ({
       id: `cand-${batchId}-${idx + 1}`,
       batchId,
       ...c,
       createdAt: new Date().toISOString()
     }));
-
     this.candidates.push(...created);
     return created;
   }

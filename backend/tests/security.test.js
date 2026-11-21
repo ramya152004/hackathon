@@ -213,7 +213,10 @@ describe('CertiFlow Authentication & Server-Side RBAC Security Suite', () => {
     assert.equal(resSmall.status, 403);
     assert.equal(resSmall.data.error, 'QUALITY_SCOPE_DENIED');
 
-    // Large batch (60 candidates) -> Quality team can approve (200)
+    // Large batch (60 candidates) in PENDING_QUALITY -> Quality team can approve (200)
+    const largeBatch = dataStore.findBatchById('batch-north-large-01');
+    largeBatch.status = 'PENDING_QUALITY';
+
     const resLarge = await api('POST', '/api/batches/batch-north-large-01/quality-approve', {
       headers: { Authorization: `Bearer ${nehaToken}` }
     });

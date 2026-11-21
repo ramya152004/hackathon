@@ -33,7 +33,7 @@ router.get('/', authenticateToken, (req, res) => {
 
 /**
  * GET /api/batches/:id
- * Fetch single batch details (enforces centre/district scope)
+ * Fetch single batch details including candidate roster and audit history
  */
 router.get('/:id', authenticateToken, enforceBatchScope, (req, res) => {
   const candidates = dataStore.getCandidatesForBatch(req.batch.id);
@@ -83,11 +83,12 @@ router.post('/', authenticateToken, requireRole(ROLES.TRAINING_CENTRE), (req, re
     districtApprovals: [],
     cycleCount: 1,
     validationErrors: [],
+    auditHistory: [],
     createdAt: new Date().toISOString()
   };
 
   dataStore.batches.push(newBatch);
-  dataStore.logAudit(req.user, 'CREATE_BATCH', 'BATCH', newBatch.id);
+  dataStore.recordBatchAudit(newBatch, req.user, 'CREATE_BATCH');
 
   return res.status(201).json({
     message: 'Batch created successfully',
@@ -112,7 +113,6 @@ router.post('/upload-csv', authenticateToken, requireRole(ROLES.TRAINING_CENTRE)
   const batchId = `batch-${Date.now()}`;
   const batchNumber = `BATCH-2026-${Math.floor(100 + Math.random() * 900)}`;
 
-  // Run all-or-nothing validation
   const validation = validateCandidateCsv(csvContent);
 
   const newBatch = {
@@ -128,15 +128,14 @@ router.post('/upload-csv', authenticateToken, requireRole(ROLES.TRAINING_CENTRE)
     districtApprovals: [],
     cycleCount: 1,
     validationErrors: validation.errors,
+    auditHistory: [],
     createdAt: new Date().toISOString()
   };
 
   dataStore.batches.push(newBatch);
 
   if (!validation.isValid) {
-    dataStore.logAudit(req.user, 'CSV_UPLOAD_FAILED', 'BATCH', newBatch.id, {
-      errorsCount: validation.errors.length
-    });
+    dataStore.recordBatchAudit(newBatch, req.user, 'CSV_UPLOAD_FAILED', `${validation.errors.length} validation errors`);
 
     return res.status(422).json({
       success: false,
@@ -150,12 +149,8 @@ router.post('/upload-csv', authenticateToken, requireRole(ROLES.TRAINING_CENTRE)
     });
   }
 
-  // Atomically commit all candidates
   const committedCandidates = dataStore.setCandidatesForBatch(newBatch.id, validation.candidates);
-
-  dataStore.logAudit(req.user, 'CSV_UPLOAD_SUCCESS', 'BATCH', newBatch.id, {
-    candidateCount: committedCandidates.length
-  });
+  dataStore.recordBatchAudit(newBatch, req.user, 'CSV_UPLOAD_SUCCESS', `Imported ${committedCandidates.length} candidates`);
 
   return res.status(201).json({
     success: true,
@@ -191,11 +186,7 @@ router.put(
     if (!validation.isValid) {
       batch.status = 'NEEDS_CORRECTION';
       batch.validationErrors = validation.errors;
-      // All-or-nothing: do NOT change existing candidate roster on failure
-
-      dataStore.logAudit(req.user, 'CSV_REUPLOAD_FAILED', 'BATCH', batch.id, {
-        errorsCount: validation.errors.length
-      });
+      dataStore.recordBatchAudit(batch, req.user, 'CSV_REUPLOAD_FAILED', `${validation.errors.length} validation errors`);
 
       return res.status(422).json({
         success: false,
@@ -209,15 +200,11 @@ router.put(
       });
     }
 
-    // Atomically overwrite candidates
     const committedCandidates = dataStore.setCandidatesForBatch(batch.id, validation.candidates);
     batch.candidateCount = committedCandidates.length;
     batch.status = 'DRAFT';
     batch.validationErrors = [];
-
-    dataStore.logAudit(req.user, 'CSV_REUPLOAD_SUCCESS', 'BATCH', batch.id, {
-      candidateCount: committedCandidates.length
-    });
+    dataStore.recordBatchAudit(batch, req.user, 'CSV_REUPLOAD_SUCCESS', `Updated with ${committedCandidates.length} candidates`);
 
     return res.status(200).json({
       success: true,
@@ -230,7 +217,7 @@ router.put(
 
 /**
  * POST /api/batches/:id/submit
- * Submit batch for District Review
+ * Submit or resubmit batch for District Review
  */
 router.post(
   '/:id/submit',
@@ -262,18 +249,21 @@ router.post(
       });
     }
 
+    // Policy for resubmitted batch: increment cycle revision and reset approvals
     if (batch.status === 'SENT_BACK') {
       batch.cycleCount += 1;
-      batch.districtApprovals = []; // Reset approvals on resubmission
+      batch.districtApprovals = [];
     }
 
     batch.status = 'PENDING_DISTRICT';
     batch.submittedAt = new Date().toISOString();
 
-    dataStore.logAudit(req.user, 'SUBMIT_BATCH', 'BATCH', batch.id, {
-      cycleCount: batch.cycleCount,
-      candidateCount: batch.candidateCount
-    });
+    dataStore.recordBatchAudit(
+      batch,
+      req.user,
+      'SUBMIT_BATCH',
+      batch.status === 'SENT_BACK' ? `Resubmitted for review (Revision ${batch.cycleCount})` : 'Initial submission'
+    );
 
     return res.status(200).json({
       message: 'Batch submitted for District Officer review.',
@@ -283,8 +273,190 @@ router.post(
 );
 
 /**
- * POST /api/batches/:id/district-approve
- * District Officer Approval (Requires 2 distinct officers in the district)
+ * Internal Decision Handler (Core State Machine & Concurrency Control)
+ */
+async function handleDecision(req, res) {
+  const batchId = req.params.id;
+  const { action, reason } = req.body;
+  const actor = req.user;
+
+  if (!action || !['APPROVE', 'REJECT', 'RETURN_FOR_CORRECTION'].includes(action)) {
+    return res.status(400).json({
+      error: 'INVALID_ACTION',
+      message: "Action must be one of: 'APPROVE', 'REJECT', 'RETURN_FOR_CORRECTION'"
+    });
+  }
+
+  // Mandatory reason for REJECT and RETURN_FOR_CORRECTION
+  if (['REJECT', 'RETURN_FOR_CORRECTION'].includes(action)) {
+    if (!reason || reason.trim().length === 0) {
+      return res.status(400).json({
+        error: 'MISSING_REASON',
+        message: `A clear reason is strictly required when executing '${action}'.`
+      });
+    }
+  }
+
+  // Execute within per-batch mutex lock to protect against race conditions
+  return await dataStore.withBatchLock(batchId, async () => {
+    const batch = dataStore.findBatchById(batchId);
+
+    // 1. REJECT Action (Permanent)
+    if (action === 'REJECT') {
+      const allowableRoles = [ROLES.DISTRICT_OFFICER, ROLES.QUALITY_TEAM, ROLES.STATE_OFFICE];
+      if (!allowableRoles.includes(actor.role)) {
+        return res.status(403).json({
+          error: 'FORBIDDEN_ROLE',
+          message: 'You are not authorized to reject this batch.'
+        });
+      }
+
+      batch.status = 'REJECTED';
+      batch.rejectionReason = reason.trim();
+      dataStore.recordBatchAudit(batch, actor, 'REJECT', reason.trim());
+
+      return res.status(200).json({
+        message: 'Batch rejected permanently.',
+        batch
+      });
+    }
+
+    // 2. RETURN_FOR_CORRECTION Action
+    if (action === 'RETURN_FOR_CORRECTION') {
+      const allowableRoles = [ROLES.DISTRICT_OFFICER, ROLES.QUALITY_TEAM, ROLES.STATE_OFFICE];
+      if (!allowableRoles.includes(actor.role)) {
+        return res.status(403).json({
+          error: 'FORBIDDEN_ROLE',
+          message: 'You are not authorized to return this batch for correction.'
+        });
+      }
+
+      batch.status = 'SENT_BACK';
+      batch.returnReason = reason.trim();
+      // Policy: Invalidate previous approvals on return
+      batch.districtApprovals = [];
+
+      dataStore.recordBatchAudit(batch, actor, 'RETURN_FOR_CORRECTION', reason.trim());
+
+      return res.status(200).json({
+        message: 'Batch returned to training centre for correction. Prior approvals reset.',
+        batch
+      });
+    }
+
+    // 3. APPROVE Action
+    if (action === 'APPROVE') {
+      // Stage A: District Level Approval
+      if (['PENDING_DISTRICT', 'DISTRICT_PARTIAL_APPROVED'].includes(batch.status)) {
+        if (actor.role !== ROLES.DISTRICT_OFFICER) {
+          return res.status(403).json({
+            error: 'FORBIDDEN_ROLE',
+            message: 'Only District Officers can approve at this stage.'
+          });
+        }
+
+        // Check if this officer already voted in this cycle
+        const existingVote = batch.districtApprovals.find(
+          (a) => a.officerId === actor.sub && a.cycleCount === batch.cycleCount
+        );
+        if (existingVote) {
+          return res.status(409).json({
+            error: 'DUPLICATE_APPROVAL',
+            message: 'You have already approved this batch in the current revision cycle.'
+          });
+        }
+
+        // Record vote
+        batch.districtApprovals.push({
+          officerId: actor.sub,
+          officerName: actor.name,
+          timestamp: new Date().toISOString(),
+          cycleCount: batch.cycleCount
+        });
+
+        // First of two required approvals
+        if (batch.districtApprovals.length === 1) {
+          batch.status = 'DISTRICT_PARTIAL_APPROVED';
+          dataStore.recordBatchAudit(batch, actor, 'DISTRICT_APPROVE_1', reason);
+
+          return res.status(200).json({
+            message: 'First district approval recorded. Awaiting second officer.',
+            approvalsCount: 1,
+            approvalsRequired: 2,
+            batch
+          });
+        }
+
+        // Second of two required approvals -> Consensus Reached!
+        // Evaluate dynamic Quality Team routing rule:
+        if (batch.candidateCount > 50) {
+          batch.status = 'PENDING_QUALITY';
+        } else {
+          batch.status = 'PENDING_STATE';
+        }
+
+        dataStore.recordBatchAudit(batch, actor, 'DISTRICT_APPROVE_2', reason);
+
+        return res.status(200).json({
+          message: 'District consensus reached (2/2 approvals). Advanced to next stage.',
+          approvalsCount: 2,
+          approvalsRequired: 2,
+          batch
+        });
+      }
+
+      // Stage B: Quality Team Approval
+      if (batch.status === 'PENDING_QUALITY') {
+        if (actor.role !== ROLES.QUALITY_TEAM) {
+          return res.status(403).json({
+            error: 'FORBIDDEN_ROLE',
+            message: 'This batch requires Quality Team approval before moving to State Office.'
+          });
+        }
+
+        batch.status = 'PENDING_STATE';
+        dataStore.recordBatchAudit(batch, actor, 'QUALITY_APPROVE', reason);
+
+        return res.status(200).json({
+          message: 'Quality team approved. Advanced to State Office.',
+          batch
+        });
+      }
+
+      // Stage C: State Office Final Approval
+      if (batch.status === 'PENDING_STATE') {
+        if (actor.role !== ROLES.STATE_OFFICE) {
+          return res.status(403).json({
+            error: 'FORBIDDEN_ROLE',
+            message: 'Only the State Office can grant final approval.'
+          });
+        }
+
+        batch.status = 'APPROVED';
+        dataStore.recordBatchAudit(batch, actor, 'STATE_FINAL_APPROVE', reason);
+
+        return res.status(200).json({
+          message: 'State final approval granted. Certificate issuance pipeline initiated.',
+          batch
+        });
+      }
+
+      return res.status(400).json({
+        error: 'INVALID_TRANSITION',
+        message: `Batch in state '${batch.status}' cannot receive approval.`
+      });
+    }
+  });
+}
+
+/**
+ * POST /api/batches/:id/decision
+ * Unified Server-Side State Transition Decision Endpoint
+ */
+router.post('/:id/decision', authenticateToken, enforceBatchScope, handleDecision);
+
+/**
+ * Route aliases for backwards compatibility
  */
 router.post(
   '/:id/district-approve',
@@ -292,85 +464,30 @@ router.post(
   requireRole(ROLES.DISTRICT_OFFICER),
   enforceBatchScope,
   (req, res) => {
-    const batch = req.batch;
-    const officerId = req.user.sub;
-
-    if (batch.districtApprovals.includes(officerId)) {
-      return res.status(409).json({
-        error: 'DUPLICATE_APPROVAL',
-        message: 'You have already approved this batch in the current cycle.'
-      });
-    }
-
-    batch.districtApprovals.push(officerId);
-    dataStore.logAudit(req.user, 'DISTRICT_APPROVE', 'BATCH', batch.id);
-
-    // Multi-officer consensus logic:
-    if (batch.districtApprovals.length === 1) {
-      batch.status = 'DISTRICT_PARTIAL_APPROVED';
-      return res.status(200).json({
-        message: 'First district approval recorded. Awaiting second officer.',
-        approvalsCount: 1,
-        approvalsRequired: 2,
-        batch
-      });
-    }
-
-    // 2 distinct approvals reached:
-    if (batch.candidateCount > 50) {
-      batch.status = 'PENDING_QUALITY';
-    } else {
-      batch.status = 'PENDING_STATE';
-    }
-
-    return res.status(200).json({
-      message: 'District consensus reached (2/2 approvals). Batch advanced.',
-      approvalsCount: 2,
-      approvalsRequired: 2,
-      batch
-    });
+    req.body.action = 'APPROVE';
+    return handleDecision(req, res);
   }
 );
 
-/**
- * POST /api/batches/:id/quality-approve
- * Quality Team Approval (Batches > 50 candidates)
- */
 router.post(
   '/:id/quality-approve',
   authenticateToken,
   requireRole(ROLES.QUALITY_TEAM),
   enforceBatchScope,
   (req, res) => {
-    const batch = req.batch;
-    batch.status = 'PENDING_STATE';
-    dataStore.logAudit(req.user, 'QUALITY_APPROVE', 'BATCH', batch.id);
-
-    return res.status(200).json({
-      message: 'Quality team approved. Advanced to State Office.',
-      batch
-    });
+    req.body.action = 'APPROVE';
+    return handleDecision(req, res);
   }
 );
 
-/**
- * POST /api/batches/:id/final-approve
- * State Office Final Approval
- */
 router.post(
   '/:id/final-approve',
   authenticateToken,
   requireRole(ROLES.STATE_OFFICE),
   enforceBatchScope,
   (req, res) => {
-    const batch = req.batch;
-    batch.status = 'APPROVED';
-    dataStore.logAudit(req.user, 'STATE_FINAL_APPROVE', 'BATCH', batch.id);
-
-    return res.status(200).json({
-      message: 'State final approval granted. Certificate issuance triggered.',
-      batch
-    });
+    req.body.action = 'APPROVE';
+    return handleDecision(req, res);
   }
 );
 
