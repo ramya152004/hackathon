@@ -5,13 +5,20 @@
 
 ---
 
-## 1. Executive Summary
+## 1. Requirements & Technical Decisions Note
 
-CertiFlow addresses the critical operational integrity issues in skilling certification:
-- Prevents issuance fraud and unverified credentials through multi-level, consensus-driven state transitions.
-- Enforces strict two-officer consensus at the district level, automated quality routing for large cohorts, and exclusive state-level final approval and revocation.
-- Issues tamper-proof, binary PDF-1.4 digital certificates with embedded unguessable verification QR tokens and hard database-level uniqueness constraints.
-- Delivers unauthenticated public verification with strict zero-PII data redaction and zero-stale-cache reflection.
+As guided by the problem statement, where the brief leaves decisions open, we have made explicit, documented architectural decisions:
+
+| Open Decision | Chosen Rule / Assumption | Justification & Reason |
+| :--- | :--- | :--- |
+| **What counts as a large batch?** | Cohorts $> 50$ candidates trigger Quality Team review. | 50 candidates matches typical classroom batch size; larger cohorts represent multi-section batches requiring extra scrutiny. |
+| **What happens to prior approvals on resubmission?** | Invalidate prior approvals and increment `cycleCount`. | If a training centre edits candidate scores or roster, previous officer approvals must not silently apply to new data. Old votes remain preserved in audit history. |
+| **Can a district officer approve their own centre's batch?** | Disallowed by conflict-of-interest policy. | District officers are strictly bound to their assigned district; officers cannot act as training centre uploaders. |
+| **Mandatory Candidate Fields** | 7 columns: `fullName`, `nationalId`, `phone`, `courseName`, `completionDate`, `grade`, `score`. | Captures minimum verification facts without collecting unnecessary personal data. |
+| **When is a certificate created?** | Strictly post-State Final Approval (`APPROVED`). | No certificate or PDF exists prior to State sign-off; prevents draft credentials from entering circulation. |
+| **What does public verification reveal?** | Candidate Name, Course, Training Centre, District, Grade, Issued/Cancelled Date. | **Zero-PII Guarantee**: Never exposes phone numbers, Aadhaar/national ID, or private candidate download tokens. |
+| **SLA Threshold for Stalled Batches** | Batches pending review $> 48\text{ hours}$ trigger senior escalation alerts. | Prevents files sitting with officers for days (the programme office's #1 complaint). |
+| **Mock WhatsApp Simulation Model** | 80% immediate success, 15% transient failure, 5% timeout. Bounded retries (max 3) with backoff. | Simulates real-world cellular delivery unreliability without calling paid APIs. |
 
 ---
 
@@ -37,7 +44,8 @@ npm test
 npm start
 ```
 
-Server starts at `http://localhost:3000`.
+- **Backend API & Public Verification Portal**: `http://localhost:3000`
+- **Interactive Multi-Persona Dashboard**: `http://localhost:5173` (run `npm --prefix frontend/frontend run dev`)
 
 ---
 
