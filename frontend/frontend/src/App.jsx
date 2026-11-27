@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import './gov-theme.css';
 
-const API = 'http://localhost:3000/api';
+const API = (import.meta.env.VITE_API_URL || 'http://localhost:3000') + '/api';
 
 // Demo mode (default): clicking a person logs in with the shared demo password, so reviewers
 // can try every flow instantly. Set VITE_DEMO_MODE=false to show a real sign-in form instead.
